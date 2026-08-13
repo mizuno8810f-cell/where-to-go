@@ -22,6 +22,27 @@ const C = {
 const MONO = 'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace';
 const SANS =
   'system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif';
+const ROUND = '"M PLUS Rounded 1c", ' + SANS;
+
+/* アプリのロゴ：緑の丸に丸ゴシックでアプリ名を2行で入れる */
+function Logo({ size = 40 }) {
+  return (
+    <div
+      aria-label="ドコイク？"
+      style={{
+        width: size, height: size, borderRadius: "50%",
+        background: `radial-gradient(circle at 32% 26%, ${C.signalBright}, ${C.signal} 72%)`,
+        boxShadow: `0 ${size * 0.09}px ${size * 0.28}px ${C.signal}55, inset 0 1px 2px rgba(255,255,255,.4)`,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        color: "#fff", fontFamily: ROUND, fontWeight: 800, lineHeight: 1.02, letterSpacing: 0.5,
+        flex: "0 0 auto", userSelect: "none",
+      }}
+    >
+      <span style={{ fontSize: size * 0.28 }}>ドコ</span>
+      <span style={{ fontSize: size * 0.28 }}>イク？</span>
+    </div>
+  );
+}
 
 /* ============================================================
    データ（東京・神奈川 955駅 / デート先ネットワーク v1）
@@ -482,7 +503,7 @@ function Btn({ onClick, children, kind = "primary", disabled }) {
 function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
-  const [screen, setScreen] = useState("home"); // home step1 step2 step3 draw final result manage
+  const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
   const [hf, setHf] = useState({ priority: "standard", time: null, history: null });
   const [base, setBase] = useState(BASE_DEFAULT);
   const [wishes, setWishes] = useState([]);
@@ -583,9 +604,11 @@ function App() {
     <Shell>
 
       {/* ヘッダ */}
+      {screen !== "title" && (
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 3, color: C.signal, fontWeight: 700 }}>いこう ・ WHERE TO GO</span>
+        <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center", gap: 9 }}>
+          <Logo size={38} />
+          <span style={{ fontFamily: ROUND, fontSize: 20, fontWeight: 800, color: C.signal, letterSpacing: 0.5 }}>ドコイク？</span>
         </button>
         {screen !== "manage" ? (
           <button onClick={() => setScreen("manage")} style={miniLink}>駅を管理</button>
@@ -593,6 +616,30 @@ function App() {
           <button onClick={resetFlow} style={miniLink}>戻る</button>
         )}
       </div>
+      )}
+
+      {screen === "title" && (
+        <Fade key="title">
+          <div style={{ minHeight: "76vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 6px" }}>
+            <Logo size={172} />
+            <h1 style={{ fontFamily: ROUND, fontSize: 42, fontWeight: 800, color: C.signal, margin: "26px 0 4px", letterSpacing: 3 }}>
+              ドコイク？
+            </h1>
+            <p style={{ fontFamily: ROUND, fontSize: 13, fontWeight: 700, color: C.signalDim, letterSpacing: 4, margin: "0 0 20px" }}>
+              WHERE TO GO
+            </p>
+            <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 320, margin: 0 }}>
+              東京・神奈川の955駅から、<br />
+              今日のデート先をおまかせでご提案。<br />
+              条件を選ぶだけ。迷わず、すぐ決まる。
+            </p>
+            <div style={{ height: 34 }} />
+            <div style={{ width: "100%", maxWidth: 320 }}>
+              <Btn onClick={() => setScreen("home")}>はじめる →</Btn>
+            </div>
+          </div>
+        </Fade>
+      )}
 
       {screen === "home" && (
         <Fade key="home">
