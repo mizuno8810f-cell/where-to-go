@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+/* React/ReactDOM は index.html の CDN から global で読み込む */
+const { useState, useEffect, useRef, useMemo } = React;
 
 /* ============================================================
    トークン（きっぷ / 発車案内の世界観）
@@ -484,7 +485,7 @@ function Btn({ onClick, children, kind = "primary", disabled }) {
 /* ============================================================
    メイン
    ============================================================ */
-export default function App() {
+function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState("home"); // home step1 step2 step3 draw final result manage
@@ -586,7 +587,6 @@ export default function App() {
 
   return (
     <Shell>
-      <style>{css}</style>
 
       {/* ヘッダ */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -924,24 +924,7 @@ const modalCard = {
   maxHeight: "88vh", overflowY: "auto", boxShadow: "0 -10px 40px rgba(0,0,0,.25)",
 };
 
-/* ============================================================
-   CSS（アニメ / reduced-motion 尊重）
-   ============================================================ */
-const css = `
-* { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible { outline: 3px solid ${C.signalBright}; outline-offset: 2px; }
-.fade { animation: fade .28s ease both; }
-@keyframes fade { from { opacity: 0; transform: translateY(6px);} to { opacity:1; transform:none;} }
-.deal { animation: deal .34s cubic-bezier(.2,.7,.2,1) both; }
-@keyframes deal { from { opacity:0; transform: translateY(14px) scale(.98);} to { opacity:1; transform:none;} }
-.reveal { animation: reveal .5s cubic-bezier(.2,.7,.2,1) both; }
-@keyframes reveal { from { opacity:0; transform: translateY(18px) scale(.96);} to { opacity:1; transform:none;} }
-@keyframes pop { 0% { transform: scale(.5); opacity: 0; } 60% { transform: scale(1.16); } 100% { transform: scale(1); opacity: 1; } }
-.dot { animation: blink 1s infinite; margin: 0 3px; }
-.dot:nth-child(2) { animation-delay: .18s; }
-.dot:nth-child(3) { animation-delay: .36s; }
-@keyframes blink { 0%, 100% { opacity: .22; } 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .fade, .deal, .reveal, .dot { animation: none !important; }
-}
-`;
+/* エントリポイント */
+ReactDOM.createRoot(document.getElementById("root")).render(
+  React.createElement(React.StrictMode, null, React.createElement(App))
+);

@@ -5,13 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#17263A" />
     <title>どこ行く？ — デート先ネットワーク</title>
+    <link rel="stylesheet" href="./style.css" />
     <style>
       html, body, #root { margin: 0; padding: 0; min-height: 100%; }
       body { background: #F0EDE4; }
     </style>
+
+    <!-- React 本体（CDN） -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- ブラウザ内で JSX を変換（CDN） -->
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <!-- アプリ本体。JSX を含むので Babel で変換して読み込む -->
+    <script type="text/babel" data-presets="react" src="./app.js"></script>
   </body>
 </html>
