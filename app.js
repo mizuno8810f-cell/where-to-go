@@ -24,22 +24,30 @@ const SANS =
   'system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif';
 const ROUND = '"M PLUS Rounded 1c", ' + SANS;
 
-/* アプリのロゴ：緑の丸に丸ゴシックでアプリ名を2行で入れる */
-function Logo({ size = 40 }) {
+/* アプリのロゴ：一文字ずつ緑の丸で囲む（ド・コ・イ・ク）＋ ？ */
+function Logo({ size = 34 }) {
+  const chars = ["ド", "コ", "イ", "ク"];
   return (
     <div
       aria-label="ドコイク？"
-      style={{
-        width: size, height: size, borderRadius: "50%",
-        background: `radial-gradient(circle at 32% 26%, ${C.signalBright}, ${C.signal} 72%)`,
-        boxShadow: `0 ${size * 0.09}px ${size * 0.28}px ${C.signal}55, inset 0 1px 2px rgba(255,255,255,.4)`,
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        color: "#fff", fontFamily: ROUND, fontWeight: 800, lineHeight: 1.02, letterSpacing: 0.5,
-        flex: "0 0 auto", userSelect: "none",
-      }}
+      style={{ display: "inline-flex", alignItems: "center", gap: size * 0.16, flexWrap: "wrap", justifyContent: "center" }}
     >
-      <span style={{ fontSize: size * 0.28 }}>ドコ</span>
-      <span style={{ fontSize: size * 0.28 }}>イク？</span>
+      {chars.map((ch, i) => (
+        <span
+          key={i}
+          style={{
+            width: size, height: size, borderRadius: "50%",
+            background: `radial-gradient(circle at 32% 26%, ${C.signalBright}, ${C.signal} 72%)`,
+            boxShadow: `0 ${size * 0.08}px ${size * 0.24}px ${C.signal}44, inset 0 1px 2px rgba(255,255,255,.4)`,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontFamily: ROUND, fontWeight: 800, fontSize: size * 0.5,
+            lineHeight: 1, flex: "0 0 auto", userSelect: "none",
+          }}
+        >
+          {ch}
+        </span>
+      ))}
+      <span style={{ fontFamily: ROUND, fontWeight: 800, fontSize: size * 0.82, color: C.signal, marginLeft: size * 0.02 }}>？</span>
     </div>
   );
 }
@@ -606,9 +614,8 @@ function App() {
       {/* ヘッダ */}
       {screen !== "title" && (
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center", gap: 9 }}>
-          <Logo size={38} />
-          <span style={{ fontFamily: ROUND, fontSize: 20, fontWeight: 800, color: C.signal, letterSpacing: 0.5 }}>ドコイク？</span>
+        <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
+          <Logo size={28} />
         </button>
         {screen !== "manage" ? (
           <button onClick={() => setScreen("manage")} style={miniLink}>駅を管理</button>
@@ -621,11 +628,8 @@ function App() {
       {screen === "title" && (
         <Fade key="title">
           <div style={{ minHeight: "76vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 6px" }}>
-            <Logo size={172} />
-            <h1 style={{ fontFamily: ROUND, fontSize: 42, fontWeight: 800, color: C.signal, margin: "26px 0 4px", letterSpacing: 3 }}>
-              ドコイク？
-            </h1>
-            <p style={{ fontFamily: ROUND, fontSize: 13, fontWeight: 700, color: C.signalDim, letterSpacing: 4, margin: "0 0 20px" }}>
+            <Logo size={62} />
+            <p style={{ fontFamily: ROUND, fontSize: 13, fontWeight: 700, color: C.signalDim, letterSpacing: 4, margin: "24px 0 20px" }}>
               WHERE TO GO
             </p>
             <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 320, margin: 0 }}>
