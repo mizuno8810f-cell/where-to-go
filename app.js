@@ -53,7 +53,7 @@ function Logo({ size = 34 }) {
 }
 
 /* ============================================================
-   データ（東京・神奈川 955駅 / デート先ネットワーク v1）
+   データ（東京・神奈川 955駅 / おでかけ先ネットワーク v1）
    RAW: i=id, n=駅名, p=県(0東京/1神奈川), r=searchPriority,
         f=dateFeature, s=dateScores(下記SCORE_KEYS順の19値)
    ADJ: 隣接駅グラフ（所要時間の経路計算用）
@@ -617,9 +617,7 @@ function App() {
         <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
           <Logo size={28} />
         </button>
-        {screen !== "manage" ? (
-          <button onClick={() => setScreen("manage")} style={miniLink}>駅を管理</button>
-        ) : (
+        {screen === "manage" && (
           <button onClick={resetFlow} style={miniLink}>戻る</button>
         )}
       </div>
@@ -634,7 +632,7 @@ function App() {
             </p>
             <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 320, margin: 0 }}>
               東京・神奈川の955駅から、<br />
-              今日のデート先をおまかせでご提案。<br />
+              今日のおでかけ先をおまかせでご提案。<br />
               条件を選ぶだけ。迷わず、すぐ決まる。
             </p>
             <div style={{ height: 34 }} />
