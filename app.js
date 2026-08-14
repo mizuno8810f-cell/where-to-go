@@ -1207,6 +1207,8 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
         <Chip active={area === "all"} onClick={() => setArea("all")}>すべて</Chip>
         <Chip active={area === "東京"} onClick={() => setArea("東京")}>東京</Chip>
         <Chip active={area === "神奈川"} onClick={() => setArea("神奈川")}>神奈川</Chip>
+        <Chip active={area === "埼玉"} onClick={() => setArea("埼玉")}>埼玉</Chip>
+        <Chip active={area === "千葉"} onClick={() => setArea("千葉")}>千葉</Chip>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
         <Chip active={sort === "count"} onClick={() => setSort("count")}>回数が多い順</Chip>
