@@ -9,10 +9,13 @@
   "use strict";
 
   var cfg = (typeof window !== "undefined" && window.__SUPABASE__) || {};
+  // URL末尾のスラッシュ・空白・誤って付いたパスを除去（"Invalid path" 対策）
+  var url = cfg.url ? String(cfg.url).trim().replace(/\/+$/, "") : "";
+  var anonKey = cfg.anonKey ? String(cfg.anonKey).trim() : "";
   var configured =
-    !!cfg.url && !!cfg.anonKey &&
-    cfg.url.indexOf("YOUR_") === -1 &&
-    cfg.anonKey.indexOf("YOUR_") === -1;
+    !!url && !!anonKey &&
+    url.indexOf("YOUR_") === -1 &&
+    anonKey.indexOf("YOUR_") === -1;
 
   var state = { enabled: false, client: null, userId: null, ready: null, lastError: "" };
 
@@ -107,7 +110,7 @@
     return;
   }
 
-  var client = window.supabase.createClient(cfg.url, cfg.anonKey, {
+  var client = window.supabase.createClient(url, anonKey, {
     auth: {
       persistSession: true,     // 同じブラウザでセッションを維持（再訪問で履歴復元）
       autoRefreshToken: true,
