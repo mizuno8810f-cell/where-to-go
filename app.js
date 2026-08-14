@@ -895,6 +895,7 @@ function App() {
     setScreen("home");
   };
   const goHome = () => { setMenuOpen(false); setSettingsOpen(false); setScreen("home"); };
+  const navTo = (s) => { setMenuOpen(false); setSettingsOpen(false); setScreen(s); };
 
   // 【絶対条件フェーズ/STEP1】タップ：off ⇄ on（4以上に絞る）。選択中(on/top)ならoff。
   const toggleHardWish = (k) => setHardWishes((cur) => {
@@ -977,7 +978,7 @@ function App() {
             >☰</button>
           </div>
         </div>
-        <Breadcrumb screen={screen} onHome={goHome} />
+        <Breadcrumb screen={screen} onNav={navTo} />
       </div>
       )}
 
@@ -1475,30 +1476,32 @@ function HomeIconBtn({ onClick }) {
   );
 }
 
-/* パンくずリスト */
+/* パンくずリスト（途中の項目をタップでその画面へ戻れる） */
 const CRUMBS = {
-  home: ["ホーム"],
-  step1: ["ホーム", "条件"],
-  pick10: ["ホーム", "条件", "候補"],
-  step3: ["ホーム", "条件", "候補", "今日の気分"],
-  reveal: ["ホーム", "条件", "候補", "結果"],
-  final: ["ホーム", "条件", "候補", "結果"],
-  manage: ["ホーム", "ココイッタ"],
+  home: [["ホーム", "home"]],
+  step1: [["ホーム", "home"], ["条件", "step1"]],
+  pick10: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"]],
+  step3: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["今日の気分", "step3"]],
+  reveal: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["結果", "final"]],
+  final: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["結果", "final"]],
+  manage: [["ホーム", "home"], ["ココイッタ", "manage"]],
 };
-function Breadcrumb({ screen, onHome }) {
-  const items = CRUMBS[screen] || ["ホーム"];
+function Breadcrumb({ screen, onNav }) {
+  const items = CRUMBS[screen] || [["ホーム", "home"]];
   return (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, marginTop: 10, fontFamily: MONO, fontSize: 11.5 }}>
-      {items.map((label, i) => {
+      {items.map(([label, target], i) => {
         const last = i === items.length - 1;
-        const isHome = i === 0;
         return (
           <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             {i > 0 && <span style={{ color: C.muted }}>›</span>}
-            {isHome && !last ? (
-              <button onClick={onHome} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 11.5, color: C.signal, fontWeight: 700 }}>{label}</button>
+            {last ? (
+              <span style={{ color: C.ink, fontWeight: 800 }}>{label}</span>
             ) : (
-              <span style={{ color: last ? C.ink : C.muted, fontWeight: last ? 800 : 600 }}>{label}</span>
+              <button
+                onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onNav(target); }}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 11.5, color: C.signal, fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 2 }}
+              >{label}</button>
             )}
           </span>
         );
