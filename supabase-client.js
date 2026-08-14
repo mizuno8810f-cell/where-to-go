@@ -14,13 +14,14 @@
     cfg.url.indexOf("YOUR_") === -1 &&
     cfg.anonKey.indexOf("YOUR_") === -1;
 
-  var state = { enabled: false, client: null, userId: null, ready: null };
+  var state = { enabled: false, client: null, userId: null, ready: null, lastError: "" };
 
   function makeApi() {
     return {
       get configured() { return configured; },
       get enabled() { return state.enabled; },
       get userId() { return state.userId; },
+      get lastError() { return state.lastError; },
       ready: function () { return state.ready; },
 
       // 現在の匿名ユーザーが、その駅へ行った回数（RLSにより自分の行だけが対象）
@@ -96,8 +97,10 @@
   if (!configured || !window.supabase || !window.supabase.createClient) {
     state.ready = Promise.resolve(false);
     if (!configured) {
+      state.lastError = "接続情報が未設定（config.js）";
       console.warn("[SupaHistory] Supabase未設定（config.js）。訪問履歴のクラウド保存は無効です。");
     } else {
+      state.lastError = "supabase-js を読み込めませんでした（ネットワーク/ブロッカー）";
       console.warn("[SupaHistory] supabase-js を読み込めませんでした。訪問履歴のクラウド保存は無効です。");
     }
     window.SupaHistory = makeApi();
@@ -126,6 +129,7 @@
       state.enabled = !!state.userId;
       return state.enabled;
     } catch (e) {
+      state.lastError = "匿名ログイン失敗: " + ((e && e.message) || String(e));
       console.error("[SupaHistory] 匿名認証に失敗しました:", (e && e.message) || e);
       state.enabled = false;
       return false;

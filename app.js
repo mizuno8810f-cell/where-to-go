@@ -863,9 +863,12 @@ function VisitControl({ station, onRecorded }) {
       if (enabled && SH) {
         await SH.addVisit(station.id);
         setCount((c) => (c == null ? 1 : c + 1)); // 表示回数を即時+1
+        if (onRecorded) onRecorded();
+        setToast("「行った！」に追加しました");
+      } else {
+        if (onRecorded) onRecorded();  // ローカルのみ更新
+        setToast("この端末内にのみ記録（クラウド未接続）");
       }
-      if (onRecorded) onRecorded();  // 既存のローカル記録も更新
-      setToast("「行った！」に追加しました");
     } catch (e) {
       setToast("履歴の保存に失敗しました。もう一度お試しください。");
     } finally {
@@ -893,6 +896,40 @@ function VisitControl({ station, onRecorded }) {
           {localDoneToday ? "今日ぶんを記録済み（この端末内）" : "クラウド保存は未設定のため、この端末内にのみ記録します"}
         </p>
       )}
+    </div>
+  );
+}
+
+function CloudStatus() {
+  const [st, setSt] = useState({ phase: "loading" });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+      if (!SH) { if (alive) setSt({ phase: "nolib" }); return; }
+      let ok = false;
+      try { ok = await SH.ready(); } catch (e) { ok = false; }
+      if (!alive) return;
+      if (ok) setSt({ phase: "ok", uid: SH.userId });
+      else setSt({ phase: "off", err: SH.lastError });
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  let fg = C.muted, label = "クラウド保存：接続確認中…";
+  if (st.phase === "ok") {
+    fg = C.signal;
+    label = `クラウド保存：接続OK（ID: ${st.uid ? String(st.uid).slice(0, 8) : "?"}…）`;
+  } else if (st.phase === "nolib") {
+    fg = C.danger;
+    label = "クラウド保存：未接続（supabase-js を読み込めません。ネットワーク/広告ブロッカーを確認）";
+  } else if (st.phase === "off") {
+    fg = C.danger;
+    label = "クラウド保存：未接続（" + (st.err || "原因不明") + "）";
+  }
+  return (
+    <div style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.5, color: fg, background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 10px", marginBottom: 12, wordBreak: "break-all" }}>
+      {label}
     </div>
   );
 }
@@ -1036,6 +1073,7 @@ function Manage({ stations, onChange }) {
   return (
     <Fade key="manage">
       <StepHead n="—" title="駅の記録" sub={`全${stations.length}駅。行った所を記録できます。`} />
+      <CloudStatus />
       <RecentVisits stations={stations} />
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="駅名でさがす（例：横浜）"
         style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink }} />
