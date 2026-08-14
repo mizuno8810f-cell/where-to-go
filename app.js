@@ -521,6 +521,7 @@ function App() {
   const [rerollUsed, setRerollUsed] = useState(false);
   const [revealNames, setRevealNames] = useState([]);
   const [revealTarget, setRevealTarget] = useState("");
+  const [lastRecordedId, setLastRecordedId] = useState(null); // 結果画面「ココイク」で+1済みの駅（重複+1防止）
 
   // 初期ロード（駅データ＋出発駅）
   useEffect(() => {
@@ -572,6 +573,7 @@ function App() {
   const resetFlow = () => {
     setHf({ priority: "standard", time: null, history: null });
     setWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
+    setLastRecordedId(null);
     setScreen("home");
   };
 
@@ -796,12 +798,16 @@ function App() {
             <Ticket st={chosen} timeText={hf.time || timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
           </div>
           <div style={{ height: 22 }} />
-          <VisitControl station={chosen} onRecorded={() => recordVisit(chosen)} />
+          <VisitControl
+            station={chosen}
+            recorded={lastRecordedId === chosen.id}
+            onRecorded={() => { recordVisit(chosen); setLastRecordedId(chosen.id); }}
+          />
           <div style={{ height: 12 }} />
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Btn kind="ghost" onClick={reroll} disabled={rerollUsed}>
-                {rerollUsed ? "引き直し済み" : "もう1回だけ引く"}
+                {rerollUsed ? "再抽選は1回まで" : "再度決め直す"}
               </Btn>
             </div>
             <div style={{ flex: 1 }}>
@@ -810,14 +816,20 @@ function App() {
           </div>
           {rerollUsed && (
             <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", marginTop: 12 }}>
-              引き直しは1回まで。今日はこの縁で。
+              決め直しは1回まで。今日はこの縁で。
             </p>
           )}
         </Fade>
       )}
 
       {screen === "manage" && (
-        <Manage stations={stations} onChange={persist} />
+        <Manage
+          stations={stations}
+          onChange={persist}
+          chosen={chosen}
+          lastRecordedId={lastRecordedId}
+          onClearRecorded={() => setLastRecordedId(null)}
+        />
       )}
     </Shell>
   );
@@ -828,13 +840,14 @@ function App() {
    window.SupaHistory は supabase-client.js が定義。
    未設定/接続不可でもアプリ本体は通常動作（graceful degradation）。
    ============================================================ */
-function VisitControl({ station, onRecorded }) {
+function VisitControl({ station, onRecorded, recorded }) {
   const [enabled, setEnabled] = useState(false);
   const [count, setCount] = useState(null); // null=不明/読み込み中
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
-  const today = new Date().toISOString().slice(0, 10);
-  const localDoneToday = station.visited && station.lastVisit === today;
+
+  // すでに（この結果で）ココイク済みなら二重で+1できないようにする
+  const done = !!recorded;
 
   // 駅が切り替わったら、その駅の訪問回数を取り直す
   useEffect(() => {
@@ -856,7 +869,7 @@ function VisitControl({ station, onRecorded }) {
   }, [station.id]);
 
   const onGo = async () => {
-    if (saving) return;            // 連打による二重登録を防止
+    if (saving || done) return;    // 連打・二重登録を防止
     setSaving(true); setToast("");
     const SH = typeof window !== "undefined" ? window.SupaHistory : null;
     try {
@@ -864,13 +877,13 @@ function VisitControl({ station, onRecorded }) {
         await SH.addVisit(station.id);
         setCount((c) => (c == null ? 1 : c + 1)); // 表示回数を即時+1
         if (onRecorded) onRecorded();
-        setToast("「行った！」に追加しました");
+        setToast("ココイク！ 記録しました（＋1）");
       } else {
         if (onRecorded) onRecorded();  // ローカルのみ更新
-        setToast("この端末内にのみ記録（クラウド未接続）");
+        setToast("この端末内にのみ記録しました（＋1・クラウド未接続）");
       }
     } catch (e) {
-      setToast("履歴の保存に失敗しました。もう一度お試しください。");
+      setToast("記録に失敗しました。もう一度お試しください。");
     } finally {
       setSaving(false);
     }
@@ -883,88 +896,69 @@ function VisitControl({ station, onRecorded }) {
           行った回数：{count == null ? "…" : count}回
         </div>
       )}
-      <Btn kind="primary" onClick={onGo} disabled={saving}>
-        {saving ? "保存中…" : "行った！"}
+      <Btn kind="primary" onClick={onGo} disabled={saving || done}>
+        {done ? "ココイク済み ✓" : (saving ? "記録中…" : "ここへ行く（ココイク）")}
       </Btn>
       {toast && (
         <p style={{ fontFamily: SANS, fontSize: 13, fontWeight: 700, textAlign: "center", marginTop: 10, color: toast.indexOf("失敗") >= 0 ? C.danger : C.signal }}>
           {toast}
         </p>
       )}
-      {!enabled && (
+      {done && (
         <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", marginTop: 8 }}>
-          {localDoneToday ? "今日ぶんを記録済み（この端末内）" : "クラウド保存は未設定のため、この端末内にのみ記録します"}
+          この駅は＋1済みです。回数の増減は「ココイッタ」で調整できます。
+        </p>
+      )}
+      {!enabled && !done && (
+        <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", marginTop: 8 }}>
+          クラウド保存は未設定のため、この端末内にのみ記録します
         </p>
       )}
     </div>
   );
 }
 
-function CloudStatus() {
-  const [st, setSt] = useState({ phase: "loading" });
+/* ココイッタ一覧の1行：回数の ＋1/−1 と、増減が見えるアニメ表示 */
+function VisitRow({ st, onAdd, onRemove, recorded, rank }) {
+  const [pop, setPop] = useState(null); // "＋1" / "−1"
+  const prev = useRef(st.visitCount);
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      const SH = typeof window !== "undefined" ? window.SupaHistory : null;
-      if (!SH) { if (alive) setSt({ phase: "nolib" }); return; }
-      let ok = false;
-      try { ok = await SH.ready(); } catch (e) { ok = false; }
-      if (!alive) return;
-      if (ok) setSt({ phase: "ok", uid: SH.userId });
-      else setSt({ phase: "off", err: SH.lastError });
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  let fg = C.muted, label = "クラウド保存：接続確認中…";
-  if (st.phase === "ok") {
-    fg = C.signal;
-    label = `クラウド保存：接続OK（ID: ${st.uid ? String(st.uid).slice(0, 8) : "?"}…）`;
-  } else if (st.phase === "nolib") {
-    fg = C.danger;
-    label = "クラウド保存：未接続（supabase-js を読み込めません。ネットワーク/広告ブロッカーを確認）";
-  } else if (st.phase === "off") {
-    fg = C.danger;
-    label = "クラウド保存：未接続（" + (st.err || "原因不明") + "）";
-  }
+    if (st.visitCount !== prev.current) {
+      setPop(st.visitCount > prev.current ? "＋1" : "−1");
+      prev.current = st.visitCount;
+      const t = setTimeout(() => setPop(null), 700);
+      return () => clearTimeout(t);
+    }
+  }, [st.visitCount]);
+  const up = pop === "＋1";
   return (
-    <div style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.5, color: fg, background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 10px", marginBottom: 12, wordBreak: "break-all" }}>
-      {label}
-    </div>
-  );
-}
-
-function RecentVisits({ stations }) {
-  const [rows, setRows] = useState(null); // null=読み込み中, false=無効, []=なし
-  const nameOf = useMemo(() => {
-    const m = {}; stations.forEach((s) => { m[s.id] = s; }); return m;
-  }, [stations]);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const SH = typeof window !== "undefined" ? window.SupaHistory : null;
-      let ok = false;
-      try { ok = SH ? await SH.ready() : false; } catch (e) { ok = false; }
-      if (!ok) { if (alive) setRows(false); return; }
-      try { const r = await SH.getRecentVisits(10); if (alive) setRows(r); }
-      catch (e) { if (alive) setRows(false); }
-    })();
-    return () => { alive = false; };
-  }, []);
-  if (!rows || rows.length === 0) return null; // 無効/なしのときは何も出さない
-  const md = (ts) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}`; };
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "4px 2px 8px" }}>最近ココイッタ駅（クラウド保存）</div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {rows.map((r, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 12px" }}>
-            <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.ink }}>
-              {nameOf[r.station_id] ? nameOf[r.station_id].name : r.station_id}
-            </span>
-            <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>{md(r.visited_at)}</span>
-          </div>
-        ))}
+    <div style={{ background: C.paperCard, border: `1px solid ${recorded ? C.signal : C.line}`, borderRadius: 14, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        {rank != null && <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, fontWeight: 700, minWidth: 22 }}>#{rank}</div>}
+        <div style={{ fontFamily: SANS, fontSize: 18, fontWeight: 800, color: C.ink }}>{st.name}</div>
+        <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>{st.area}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, position: "relative" }}>
+        <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>行った回数：</span>
+        <span key={st.visitCount} className={pop ? "countpop" : ""} style={{ fontFamily: MONO, fontSize: 22, fontWeight: 800, color: C.signal, fontVariantNumeric: "tabular-nums", minWidth: 20, textAlign: "center", display: "inline-block" }}>
+          {st.visitCount}
+        </span>
+        <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>回</span>
+        {pop && (
+          <span className="floatpop" style={{ position: "absolute", left: 70, top: -8, fontFamily: MONO, fontSize: 16, fontWeight: 800, color: up ? C.signalBright : C.danger, pointerEvents: "none" }}>
+            {pop}
+          </span>
+        )}
+        {st.lastVisit && <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted, marginLeft: 6 }}>（最終 {st.lastVisit}）</span>}
+      </div>
+      {recorded && (
+        <div style={{ fontFamily: SANS, fontSize: 11.5, color: C.signal, fontWeight: 700, marginTop: 6 }}>
+          先ほどのココイクで＋1済み（重複登録を防止中）
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <SmallBtn onClick={() => onAdd(st)} disabled={recorded}>＋1</SmallBtn>
+        <SmallBtn danger onClick={() => onRemove(st)} disabled={st.visitCount <= 0}>−1</SmallBtn>
       </div>
     </div>
   );
@@ -1046,72 +1040,118 @@ function BasePicker({ stations, baseId, onPick }) {
   );
 }
 
-function Manage({ stations, onChange }) {
-  const [q, setQ] = useState("");
-  const list = useMemo(() => {
-    const query = q.trim();
-    if (query) return stations.filter((s) => s.name.includes(query)).slice(0, 60);
-    return stations.filter((s) => s.visited).slice(0, 60);
-  }, [stations, q]);
-  const prBadge = (pr) => (pr === 1 ? "王道" : pr === 2 ? "穴場" : "その他");
+function Manage({ stations, onChange, chosen, lastRecordedId, onClearRecorded }) {
+  const [mode, setMode] = useState("list");   // "list" | "register"
+  const [regQ, setRegQ] = useState("");         // 登録モードの検索
+  const [q, setQ] = useState("");               // 一覧内の検索
+  const [area, setArea] = useState("all");      // フィルタ（エリア）
+  const [sort, setSort] = useState("count");    // 並び替え
   const today = new Date().toISOString().slice(0, 10);
-  // 「行った+1」：ローカルを即時更新しつつ、Supabaseにも1レコード追加（クラウド保存）
-  const quickVisit = async (st) => {
+
+  // ＋1：ローカル即時更新＋Supabaseへ1レコード追加
+  const addOne = async (st) => {
     onChange(stations.map((x) => x.id === st.id
       ? { ...x, visited: true, visitCount: x.visitCount + 1, lastVisit: today } : x));
     const SH = typeof window !== "undefined" ? window.SupaHistory : null;
-    if (SH) { try { if (await SH.ready()) await SH.addVisit(st.id); } catch (e) { /* 保存失敗時はローカルのみ */ } }
+    if (SH) { try { if (await SH.ready()) await SH.addVisit(st.id); } catch (e) { /* ローカルのみ */ } }
   };
-  // 「記録をリセット」：ローカルを消しつつ、Supabaseのその駅の履歴も削除
-  const resetVisit = async (st) => {
+  // −1：ローカルを1減らし、Supabaseの最新1件を削除
+  const removeOne = async (st) => {
+    const cur = stations.find((x) => x.id === st.id);
+    const nextCount = Math.max(0, (cur ? cur.visitCount : 0) - 1);
     onChange(stations.map((x) => x.id === st.id
-      ? { ...x, visited: false, visitCount: 0, lastVisit: null } : x));
+      ? { ...x, visitCount: nextCount, visited: nextCount > 0, lastVisit: nextCount > 0 ? x.lastVisit : null } : x));
+    if (lastRecordedId === st.id && onClearRecorded) onClearRecorded(); // 取り消したら重複ガード解除
     const SH = typeof window !== "undefined" ? window.SupaHistory : null;
-    if (SH) { try { if (await SH.ready()) await SH.deleteVisits(st.id); } catch (e) { /* 削除失敗時はローカルのみ */ } }
+    if (SH) { try { if (await SH.ready()) await SH.removeOneVisit(st.id); } catch (e) { /* ローカルのみ */ } }
   };
+
+  // 登録モードの候補：検索文字があれば全駅から、無ければ「直前に選ばれた駅」
+  const regResults = useMemo(() => {
+    const query = regQ.trim();
+    if (query) return stations.filter((s) => s.name.includes(query)).slice(0, 60);
+    return chosen ? stations.filter((s) => s.id === chosen.id) : [];
+  }, [stations, regQ, chosen]);
+
+  // ココイッタ一覧（行った駅）：検索・フィルタ・ソート
+  const visitedList = useMemo(() => {
+    let arr = stations.filter((s) => s.visited);
+    const query = q.trim();
+    if (query) arr = arr.filter((s) => s.name.includes(query));
+    if (area !== "all") arr = arr.filter((s) => s.area === area);
+    arr = arr.slice();
+    if (sort === "count") arr.sort((a, b) => b.visitCount - a.visitCount || (a.name < b.name ? -1 : 1));
+    else if (sort === "recent") arr.sort((a, b) => String(b.lastVisit || "").localeCompare(String(a.lastVisit || "")));
+    else arr.sort((a, b) => (a.name < b.name ? -1 : 1));
+    return arr.slice(0, 300);
+  }, [stations, q, area, sort]);
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink };
 
   return (
     <Fade key="manage">
-      <StepHead n="—" title="駅の記録" sub={`全${stations.length}駅。行った所を記録できます。`} />
-      <CloudStatus />
-      <RecentVisits stations={stations} />
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="駅名でさがす（例：横浜）"
-        style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink }} />
-      <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "12px 2px" }}>
-        {q.trim() ? `「${q.trim()}」の検索結果` : "行った記録のある駅"}
+      <StepHead n="—" title="ココイッタ" sub="行った場所の記録。回数が多い順にならびます。" />
+
+      {/* ココイッタ登録ボタン */}
+      <Btn kind={mode === "register" ? "ghost" : "primary"} onClick={() => { setMode(mode === "register" ? "list" : "register"); setRegQ(""); }}>
+        {mode === "register" ? "登録をとじる" : "＋ ココイッタを登録"}
+      </Btn>
+
+      {mode === "register" && (
+        <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: 12, margin: "12px 0 6px" }}>
+          <input value={regQ} onChange={(e) => setRegQ(e.target.value)} placeholder="駅名でさがして登録（例：横浜）" style={inputStyle} />
+          <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "10px 2px 8px" }}>
+            {regQ.trim() ? `「${regQ.trim()}」の検索結果` : (chosen ? "直前に選ばれた駅" : "まず「ドコイク？」で駅を決めると、ここに出ます")}
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {regResults.length === 0 && (
+              <p style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, textAlign: "center", padding: "12px 6px" }}>
+                {regQ.trim() ? "見つかりませんでした。" : "直前に選ばれた駅はありません。"}
+              </p>
+            )}
+            {regResults.map((st) => (
+              <VisitRow key={st.id} st={st} onAdd={addOne} onRemove={removeOne} recorded={lastRecordedId === st.id} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ height: 18 }} />
+
+      {/* 一覧：検索・エリアフィルタ・並び替え */}
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="記録した駅から検索" style={inputStyle} />
+      <div style={{ height: 12 }} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <Chip active={area === "all"} onClick={() => setArea("all")}>すべて</Chip>
+        <Chip active={area === "東京"} onClick={() => setArea("東京")}>東京</Chip>
+        <Chip active={area === "神奈川"} onClick={() => setArea("神奈川")}>神奈川</Chip>
       </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        <Chip active={sort === "count"} onClick={() => setSort("count")}>回数が多い順</Chip>
+        <Chip active={sort === "recent"} onClick={() => setSort("recent")}>最近行った順</Chip>
+        <Chip active={sort === "name"} onClick={() => setSort("name")}>駅名順</Chip>
+      </div>
+
       <div style={{ display: "grid", gap: 10 }}>
-        {list.length === 0 && (
+        {visitedList.length === 0 && (
           <p style={{ fontFamily: SANS, fontSize: 14, color: C.inkSoft, textAlign: "center", padding: "20px 6px", lineHeight: 1.6 }}>
-            {q.trim() ? "見つかりませんでした。" : "まだ記録がありません。結果画面の「行ってきた！を記録」か、ここで駅名を検索して記録できます。"}
+            まだ記録がありません。「＋ ココイッタを登録」か、結果画面の「ココイク」で記録できます。
           </p>
         )}
-        {list.map((st) => (
-          <div key={st.id} style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <div style={{ fontFamily: SANS, fontSize: 18, fontWeight: 800, color: C.ink }}>{st.name}</div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: C.signal, fontWeight: 700 }}>{prBadge(st.pr)}</div>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginTop: 2 }}>
-              {st.area} ・ {st.visited ? `訪問${st.visitCount}回${st.lastVisit ? "（" + st.lastVisit + "）" : ""}` : "未訪問"}
-            </div>
-            {st.dateFeature && <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 4 }}>{st.dateFeature}</div>}
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <SmallBtn onClick={() => quickVisit(st)}>行った+1</SmallBtn>
-              {st.visited && <SmallBtn danger onClick={() => resetVisit(st)}>記録をリセット</SmallBtn>}
-            </div>
-          </div>
+        {visitedList.map((st, i) => (
+          <VisitRow key={st.id} st={st} onAdd={addOne} onRemove={removeOne} recorded={lastRecordedId === st.id} rank={sort === "count" ? i + 1 : null} />
         ))}
       </div>
     </Fade>
   );
 }
-function SmallBtn({ children, onClick, danger }) {
+function SmallBtn({ children, onClick, danger, disabled }) {
   return (
-    <button onClick={onClick} style={{
-      flex: 1, padding: "9px", borderRadius: 10, cursor: "pointer",
+    <button onClick={onClick} disabled={disabled} style={{
+      flex: 1, padding: "9px", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer",
       border: `1px solid ${danger ? C.danger : C.line}`, background: danger ? "rgba(192,85,62,.06)" : C.paper,
       color: danger ? C.danger : C.ink, fontFamily: SANS, fontSize: 13, fontWeight: 700,
+      opacity: disabled ? 0.4 : 1,
     }}>{children}</button>
   );
 }

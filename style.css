@@ -11,6 +11,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid #13A899; outline-
 .dot:nth-child(2) { animation-delay: .18s; }
 .dot:nth-child(3) { animation-delay: .36s; }
 @keyframes blink { 0%, 100% { opacity: .22; } 50% { opacity: 1; } }
+.countpop { animation: countpop .45s cubic-bezier(.2,.7,.2,1); }
+@keyframes countpop { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+.floatpop { animation: floatpop .7s ease-out both; }
+@keyframes floatpop {
+  0% { opacity: 0; transform: translateY(2px) scale(.8); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-20px) scale(1.1); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .fade, .deal, .reveal, .dot { animation: none !important; }
+  .fade, .deal, .reveal, .dot, .countpop, .floatpop { animation: none !important; }
 }

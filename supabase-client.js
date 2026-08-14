@@ -99,6 +99,26 @@
         if (res.error) throw res.error;
         return true;
       },
+
+      // その駅の最新の1件だけ削除（−1用）
+      removeOneVisit: async function (stationId) {
+        if (!state.enabled) throw new Error("supabase-disabled");
+        var sel = await state.client
+          .from("station_visits")
+          .select("id")
+          .eq("user_id", state.userId)
+          .eq("station_id", stationId)
+          .order("visited_at", { ascending: false })
+          .limit(1);
+        if (sel.error) throw sel.error;
+        if (!sel.data || !sel.data.length) return false;
+        var del = await state.client
+          .from("station_visits")
+          .delete()
+          .eq("id", sel.data[0].id);
+        if (del.error) throw del.error;
+        return true;
+      },
     };
   }
 
