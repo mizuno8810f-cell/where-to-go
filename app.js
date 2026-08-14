@@ -897,6 +897,29 @@ function App() {
   const goHome = () => { setMenuOpen(false); setSettingsOpen(false); setScreen("home"); };
   const navTo = (s) => { setMenuOpen(false); setSettingsOpen(false); setScreen(s); };
 
+  // 共有：Web Share API →（非対応なら）クリップボードにコピー
+  const [shareToast, setShareToast] = useState("");
+  const shareToastTimer = useRef(null);
+  const showShareToast = (msg) => {
+    setShareToast(msg);
+    if (shareToastTimer.current) clearTimeout(shareToastTimer.current);
+    shareToastTimer.current = setTimeout(() => setShareToast(""), 2800);
+  };
+  const appUrl = () => (typeof location !== "undefined" ? location.origin + location.pathname : "");
+  const doShare = async (text) => {
+    const url = appUrl();
+    const data = { title: "ドコイク？", text: text || "迷ったらこれ。今日のおでかけ先をおまかせで提案してくれるアプリ「ドコイク？」", url };
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) { await navigator.share(data); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; /* それ以外はコピーへ */ }
+    try {
+      await navigator.clipboard.writeText((data.text ? data.text + "\n" : "") + url);
+      showShareToast("📋 リンクをコピーしました。友だちに送れます！");
+    } catch (e) {
+      showShareToast("コピーできませんでした。URL: " + url);
+    }
+  };
+
   // 【絶対条件フェーズ/STEP1】タップ：off ⇄ on（4以上に絞る）。選択中(on/top)ならoff。
   const toggleHardWish = (k) => setHardWishes((cur) => {
     const next = { ...cur };
@@ -1000,6 +1023,12 @@ function App() {
               icon="📍" title="ココイッタ登録"
               desc="行った場所を記録して、回数を管理します。"
               onClick={() => { setMenuOpen(false); setScreen("manage"); }}
+            />
+            <div style={{ height: 10 }} />
+            <MenuItem
+              icon="📤" title="アプリをシェア"
+              desc="「ドコイク？」を友だちにおすすめできます。"
+              onClick={() => { setMenuOpen(false); doShare(); }}
             />
           </div>
         </div>
@@ -1254,6 +1283,13 @@ function App() {
             recorded={lastRecordedId === chosen.id}
             onRecorded={() => { recordVisit(chosen); setLastRecordedId(chosen.id); }}
           />
+          <div style={{ height: 12 }} />
+          <Btn
+            kind="dark"
+            onClick={() => doShare(`ドコイク？のおまかせで、今日は『${chosen.name}』に行くことに決まった！\nあなたも行き先に迷ったら👇`)}
+          >
+            📤 この結果を友だちにシェア
+          </Btn>
           <div style={{ height: 22 }} />
           <MissionBox />
           <div style={{ height: 16 }} />
@@ -1269,6 +1305,18 @@ function App() {
           lastRecordedId={lastRecordedId}
           onClearRecorded={() => setLastRecordedId(null)}
         />
+      )}
+
+      {/* 共有時のフィードバック（コピー時など） */}
+      {shareToast && (
+        <div style={{
+          position: "fixed", left: "50%", bottom: 28, transform: "translateX(-50%)",
+          background: C.ink, color: "#fff", fontFamily: SANS, fontSize: 13.5, fontWeight: 700,
+          padding: "12px 18px", borderRadius: 999, zIndex: 90, maxWidth: "90vw", textAlign: "center",
+          boxShadow: "0 8px 24px -8px rgba(23,38,58,.6)",
+        }}>
+          {shareToast}
+        </div>
       )}
     </Shell>
   );
