@@ -103,9 +103,10 @@ function applyHard(list, hf, timeMap) {
   const allowed = PRIORITY_SET[hf.priority] || PRIORITY_SET.standard;
   return list.filter((st) => {
     if (!allowed.includes(st.pr)) return false;
-    if (hf.time) {
+    if (hf.timeOn) {
       const t = timeMap[st.id];
-      if (t == null || t > hf.time) return false;
+      const upper = hf.timeMax >= 120 ? Infinity : hf.timeMax;
+      if (t == null || t < hf.timeMin || t > upper) return false;
     }
     if (hf.history === "unvisited" && st.visited) return false;
     if (hf.history === "excludeRecent" && isRecent(st)) return false;
@@ -236,6 +237,30 @@ function useTween(value, dur = 450) {
 /* ============================================================
    小さなUI部品
    ============================================================ */
+/* 2つのつまみで範囲（min〜max）を選ぶバー */
+function RangeSlider({ min = 0, max = 120, step = 5, valueMin, valueMax, onChange }) {
+  const span = max - min || 1;
+  const pct = (v) => ((v - min) / span) * 100;
+  const setLo = (v) => onChange(Math.min(v, valueMax - step), valueMax);
+  const setHi = (v) => onChange(valueMin, Math.max(v, valueMin + step));
+  return (
+    <div style={{ position: "relative", height: 40 }}>
+      <div style={{ position: "absolute", left: 11, right: 11, top: 17, height: 6, borderRadius: 6, background: C.line }} />
+      <div
+        style={{
+          position: "absolute", top: 17, height: 6, borderRadius: 6, background: C.signal,
+          left: `calc(11px + (100% - 22px) * ${pct(valueMin) / 100})`,
+          width: `calc((100% - 22px) * ${(pct(valueMax) - pct(valueMin)) / 100})`,
+        }}
+      />
+      <input className="rng" type="range" min={min} max={max} step={step} value={valueMin}
+        onMouseDown={() => { if (typeof window !== "undefined" && window.Sfx) window.Sfx.unlock(); }}
+        onChange={(e) => setLo(+e.target.value)} aria-label="最短" />
+      <input className="rng" type="range" min={min} max={max} step={step} value={valueMax}
+        onChange={(e) => setHi(+e.target.value)} aria-label="最長" />
+    </div>
+  );
+}
 function Chip({ active, onClick, children, danger }) {
   return (
     <button
@@ -534,7 +559,7 @@ function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
-  const [hf, setHf] = useState({ priority: "standard", time: null, history: null });
+  const [hf, setHf] = useState({ priority: "standard", timeOn: false, timeMin: 0, timeMax: 60, history: null });
   const [base, setBase] = useState(BASE_DEFAULT);
   const [wishes, setWishes] = useState([]);
   const [shown, setShown] = useState([]);
@@ -718,13 +743,26 @@ function App() {
           <BasePicker stations={stations} baseId={base} onPick={setBaseAndSave} />
           <div style={{ height: 18 }} />
 
-          <FieldLabel eyebrow="TIME" title={`${baseName}からどれくらい？`} />
-          <Row>
-            <Chip active={hf.time === null} onClick={() => setHf({ ...hf, time: null })}>おまかせ</Chip>
-            {[30, 60, 90].map((t) => (
-              <Chip key={t} active={hf.time === t} onClick={() => setHf({ ...hf, time: t })}>{t}分以内</Chip>
-            ))}
-          </Row>
+          <FieldLabel eyebrow="TIME" title={`${baseName}からの所要時間`} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginBottom: hf.timeOn ? 6 : 18 }}>
+            <Chip active={!hf.timeOn} onClick={() => setHf({ ...hf, timeOn: false })}>おまかせ</Chip>
+            <Chip active={hf.timeOn} onClick={() => setHf({ ...hf, timeOn: true })}>時間で絞る</Chip>
+          </div>
+          {hf.timeOn && (
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontFamily: MONO, fontSize: 15, color: C.signal, fontWeight: 800, textAlign: "center", marginBottom: 2 }}>
+                {hf.timeMin}分 〜 {hf.timeMax >= 120 ? "上限なし" : `${hf.timeMax}分`}
+              </div>
+              <RangeSlider
+                valueMin={hf.timeMin}
+                valueMax={hf.timeMax}
+                onChange={(lo, hi) => setHf({ ...hf, timeMin: lo, timeMax: hi })}
+              />
+              <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", margin: "0" }}>
+                ※所要時間は概算です（経路が分からない駅は対象外）
+              </p>
+            </div>
+          )}
 
           <FieldLabel eyebrow="RANGE" title="どこまで攻める？" />
           <Row>
@@ -778,7 +816,7 @@ function App() {
                   <div key={st.id} className="deal" style={{ animationDelay: `${i * 45}ms` }}>
                     <StationCard
                       st={st} index={i}
-                      timeText={hf.time ? timeText(st) : null}
+                      timeText={hf.timeOn ? timeText(st) : null}
                       excludedMark={excluded.includes(st.id)}
                       onToggleExclude={() => toggleExclude(st)}
                     />
@@ -828,8 +866,11 @@ function App() {
       {screen === "final" && chosen && (
         <Fade key="final">
           <div className="reveal">
-            <Ticket st={chosen} timeText={hf.time || timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
+            <Ticket st={chosen} timeText={timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
           </div>
+          <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", margin: "10px 6px 0", lineHeight: 1.6 }}>
+            ※所要時間は概算です（乗換・待ち時間は含みません）。実際の経路・所要時間・営業状況はご自身でお確かめください。
+          </p>
           {(
             <a
               href={chosen.hotpepperUrl || "https://www.hotpepper.jp"}
