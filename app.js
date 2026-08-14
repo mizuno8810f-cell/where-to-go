@@ -617,7 +617,9 @@ function App() {
         <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
           <Logo size={28} />
         </button>
-        {screen === "manage" && (
+        {screen !== "manage" ? (
+          <button onClick={() => setScreen("manage")} style={miniLink}>ココイッタ</button>
+        ) : (
           <button onClick={resetFlow} style={miniLink}>戻る</button>
         )}
       </div>
