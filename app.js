@@ -109,8 +109,8 @@ function applyHard(list, hf, timeMap, wishes) {
       const upper = hf.timeMax >= 120 ? Infinity : hf.timeMax;
       if (t == null || t < hf.timeMin || t > upper) return false;
     }
-    if (hf.history === "unvisited" && st.visited) return false;
-    if (hf.history === "excludeRecent" && isRecent(st)) return false;
+    // 履歴：only=行ってない場所だけ（訪問済み除外）／prefer=優先（除外せず10件抽選で重み）／all=気にしない
+    if (hf.history === "only" && st.visited) return false;
     // 絶対条件フェーズの気分＝絞り込み：on は 4以上、top（長押し=最優先）は 5 のみ。
     for (const k of wishKeys) {
       const need = wishes[k] === "top" ? 5 : 4;
@@ -168,6 +168,42 @@ function sampleWeighted(pool, wishes, n) {
   }
   return out;
 }
+
+// 汎用：重み関数 wfn(st)>0 で 1 件を抽選
+function pickBy(pool, wfn) {
+  if (!pool.length) return null;
+  const w = pool.map((s) => Math.max(0, wfn(s)));
+  const total = w.reduce((a, b) => a + b, 0);
+  if (total <= 0) return pool[Math.floor(Math.random() * pool.length)];
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
+// 汎用：重み関数で n 件（重複なし）
+function sampleBy(pool, n, wfn) {
+  const items = [...pool];
+  const out = [];
+  while (out.length < n && items.length) {
+    const w = items.map((s) => Math.max(0, wfn(s)));
+    const total = w.reduce((a, b) => a + b, 0);
+    let idx;
+    if (total <= 0) { idx = Math.floor(Math.random() * items.length); }
+    else { let r = Math.random() * total; for (idx = 0; idx < items.length; idx++) { r -= w[idx]; if (r <= 0) break; } idx = Math.min(idx, items.length - 1); }
+    out.push(items[idx]); items.splice(idx, 1);
+  }
+  return out;
+}
+// 任意条件フェーズ(10→1)の重み：選択した気分スコア(1..5)の掛け算。未選択なら等倍(=完全ランダム)。
+function softWeight(st, softWishes) {
+  if (!softWishes || !softWishes.length) return 1;
+  let w = 1;
+  softWishes.forEach((k) => { w *= (st.scores[k] || 1); });
+  return w;
+}
+// 履歴「行ってない場所を優先」：行った回数に応じて 0.7^visitCount（10件の絞り込みにだけ効かせる）
+function historyWeight(st, hf) {
+  return hf.history === "prefer" ? Math.pow(0.7, st.visitCount || 0) : 1;
+}
 const prefersReduce = () =>
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -222,6 +258,110 @@ function matchTags(st, wishes) {
     .slice(0, 4)
     .map((x) => ({ label: x.label, mark: x.top ? "★" : (x.score >= 4 ? "◎" : "○") }));
 }
+
+/* ミッション（結果画面で 1〜3 個をランダム生成） */
+const MISSIONS = [
+  { c: "📸 記録・写真", t: "今日一番の写真を1枚撮る" },
+  { c: "📸 記録・写真", t: "2人で写真を撮る" },
+  { c: "📸 記録・写真", t: "今日一番笑った瞬間を写真に残す" },
+  { c: "📸 記録・写真", t: "「なんかいい」と思った景色を撮る" },
+  { c: "📸 記録・写真", t: "お互いに相手のベストショットを撮る" },
+  { c: "📸 記録・写真", t: "同じものをそれぞれの視点で撮る" },
+  { c: "📸 記録・写真", t: "今日一番変だったものを撮る" },
+  { c: "📸 記録・写真", t: "SNSに載せたくなる写真を1枚撮る" },
+  { c: "📸 記録・写真", t: "あえて映えない写真を撮る" },
+  { c: "📸 記録・写真", t: "今日を象徴するものを1枚撮る" },
+  { c: "📸 記録・写真", t: "帰る直前に写真を1枚撮る" },
+  { c: "📸 記録・写真", t: "5年後に見返したい写真を撮る" },
+  { c: "🆕 挑戦・初体験", t: "今日何か1つ初めてのことをする" },
+  { c: "🆕 挑戦・初体験", t: "普段なら選ばないものを1つ選ぶ" },
+  { c: "🆕 挑戦・初体験", t: "少しだけ勇気がいることをやる" },
+  { c: "🆕 挑戦・初体験", t: "苦手なことに1回挑戦する" },
+  { c: "🆕 挑戦・初体験", t: "相手が選んだことに文句を言わず乗ってみる" },
+  { c: "🆕 挑戦・初体験", t: "気になったことをその場でやってみる" },
+  { c: "🆕 挑戦・初体験", t: "「また今度」を1つ今日やる" },
+  { c: "🆕 挑戦・初体験", t: "入ったことのないタイプの場所に入る" },
+  { c: "🆕 挑戦・初体験", t: "普段なら通り過ぎる場所に立ち寄る" },
+  { c: "🆕 挑戦・初体験", t: "知らないものを1つ試す" },
+  { c: "🆕 挑戦・初体験", t: "いつもと違う選択を3回する" },
+  { c: "🆕 挑戦・初体験", t: "今日だけは優柔不断をやめて即決する" },
+  { c: "🆕 挑戦・初体験", t: "逆に、普段即決するものをじっくり選ぶ" },
+  { c: "🆕 挑戦・初体験", t: "ちょっと恥ずかしいことを1つやる" },
+  { c: "🆕 挑戦・初体験", t: "相手がおすすめするものを試す" },
+  { c: "🆕 挑戦・初体験", t: "「絶対選ばない」と思った方をあえて選ぶ" },
+  { c: "🆕 挑戦・初体験", t: "今日の予定を途中で1回変更する" },
+  { c: "🆕 挑戦・初体験", t: "帰るまでに「初めてだった」と言えることを作る" },
+  { c: "🔍 発見・探索", t: "今日一番面白いものを見つける" },
+  { c: "🔍 発見・探索", t: "今日一番変なものを見つける" },
+  { c: "🔍 発見・探索", t: "見たことのないものを3つ見つける" },
+  { c: "🔍 発見・探索", t: "気になる路地を1本歩いてみる" },
+  { c: "🔍 発見・探索", t: "面白い看板を見つける" },
+  { c: "🔍 発見・探索", t: "変な名前を見つける" },
+  { c: "🔍 発見・探索", t: "その街ならではのものを1つ見つける" },
+  { c: "🔍 発見・探索", t: "一番落ち着く場所を探す" },
+  { c: "🔍 発見・探索", t: "一番テンションが上がる場所を探す" },
+  { c: "🔍 発見・探索", t: "隠れた良スポットを1つ見つける" },
+  { c: "🔍 発見・探索", t: "「なんでこれあるんだろう？」を1つ見つける" },
+  { c: "🔍 発見・探索", t: "一番古そうなものを探す" },
+  { c: "🔍 発見・探索", t: "一番新しそうなものを探す" },
+  { c: "🔍 発見・探索", t: "次回来たい場所を1つ見つける" },
+  { c: "🔍 発見・探索", t: "今日初めて知ったことを1つ持ち帰る" },
+  { c: "🎲 偶然・運任せ", t: "何か1回、直感だけで決める" },
+  { c: "🎲 偶然・運任せ", t: "迷ったら右に進む" },
+  { c: "🎲 偶然・運任せ", t: "迷ったら左に進む" },
+  { c: "🎲 偶然・運任せ", t: "じゃんけんで何か1つ決める" },
+  { c: "🎲 偶然・運任せ", t: "相手に行き先を1回丸投げする" },
+  { c: "🎲 偶然・運任せ", t: "目に入った気になるものに近づいてみる" },
+  { c: "🎲 偶然・運任せ", t: "予定になかった場所に1ヶ所入る" },
+  { c: "🎲 偶然・運任せ", t: "その場のノリで何か1つ決める" },
+  { c: "🎲 偶然・運任せ", t: "二択になったら普段選ばない方を選ぶ" },
+  { c: "🎲 偶然・運任せ", t: "「せーの」で指差した方向へ進む" },
+  { c: "🎲 偶然・運任せ", t: "最初に「面白そう」と言ったものをやる" },
+  { c: "🎲 偶然・運任せ", t: "今日1回だけ「考えずに決める」" },
+  { c: "🎲 偶然・運任せ", t: "予定を1つ捨てて、その場で新しい予定を作る" },
+  { c: "👫 2人・会話", t: "相手の意外な一面を1つ見つける" },
+  { c: "👫 2人・会話", t: "相手の知らなかった話を1つ聞く" },
+  { c: "👫 2人・会話", t: "お互いの第一印象を話す" },
+  { c: "👫 2人・会話", t: "次に行きたい場所を1つずつ決める" },
+  { c: "👫 2人・会話", t: "相手に今日一番やりたいことを聞く" },
+  { c: "👫 2人・会話", t: "昔ハマっていたものについて話す" },
+  { c: "👫 2人・会話", t: "子どもの頃の話を1つする" },
+  { c: "👫 2人・会話", t: "もし100万円あったら何するか話す" },
+  { c: "👫 2人・会話", t: "お互いの最近のマイブームを教える" },
+  { c: "👫 2人・会話", t: "今日の相手の良かったところを1つ伝える" },
+  { c: "👫 2人・会話", t: "10年後何してそうか予想する" },
+  { c: "👫 2人・会話", t: "今日一番楽しかったことを帰る前に発表する" },
+  { c: "😂 ネタ・くだらない", t: "今日一番ダサいものを探す" },
+  { c: "😂 ネタ・くだらない", t: "一番変なポーズで写真を撮る" },
+  { c: "😂 ネタ・くだらない", t: "変な看板と一緒に写真を撮る" },
+  { c: "😂 ネタ・くだらない", t: "100円以内で一番いらないものを探す" },
+  { c: "😂 ネタ・くだらない", t: "今日見つけたものに勝手に名前をつける" },
+  { c: "😂 ネタ・くだらない", t: "一番高そうなものを予想する" },
+  { c: "😂 ネタ・くだらない", t: "一番安そうなものを予想する" },
+  { c: "😂 ネタ・くだらない", t: "「誰が買うんだこれ」を探す" },
+  { c: "😂 ネタ・くだらない", t: "今日一番しょうもない発見を発表する" },
+  { c: "😂 ネタ・くだらない", t: "お互いを動物に例える" },
+  { c: "😂 ネタ・くだらない", t: "その街に勝手なキャッチコピーをつける" },
+  { c: "😂 ネタ・くだらない", t: "今日を映画にするならタイトルを決める" },
+  { c: "😂 ネタ・くだらない", t: "今日一番意味不明だったものを決める" },
+  { c: "🏆 ミニゲーム・勝負", t: "赤いものを先に5個見つけた方が勝ち" },
+  { c: "🏆 ミニゲーム・勝負", t: "犬を先に見つけた方が勝ち" },
+  { c: "🏆 ミニゲーム・勝負", t: "珍しい名字を先に見つけた方が勝ち" },
+  { c: "🏆 ミニゲーム・勝負", t: "面白い看板を先に見つけた方が勝ち" },
+  { c: "🏆 ミニゲーム・勝負", t: "相手を先に3回笑わせた方が勝ち" },
+  { c: "🏆 ミニゲーム・勝負", t: "一番高い建物を先に見つけた方が勝ち" },
+  { c: "🏆 ミニゲーム・勝負", t: "「これ絶対相手好きそう」を1つずつ探す" },
+  { c: "🏆 ミニゲーム・勝負", t: "500円以内で相手が一番喜びそうなものを探す" },
+  { c: "🏆 ミニゲーム・勝負", t: "今日のベストスポットをそれぞれ1ヶ所選ぶ" },
+  { c: "🏆 ミニゲーム・勝負", t: "今日一番良かった写真を1枚ずつ出して勝負する" },
+  { c: "🏆 ミニゲーム・勝負", t: "お互いに「今日一番○○だったもの」を当てる" },
+  { c: "🎨 自由", t: "今日のお出かけにタイトルをつける" },
+  { c: "🎨 自由", t: "今日を漢字一文字で表す" },
+  { c: "🎨 自由", t: "今日のテーマソングを1曲決める" },
+  { c: "🎨 自由", t: "今日起きたことを3行でまとめる" },
+  { c: "🎨 自由", t: "今日の満足度を最後に100点満点で採点する" },
+  { c: "🎨 自由", t: "「今日やってよかった」と思えることを1つ作る" },
+];
 
 /* カウントの数値をなめらかに変える */
 function useTween(value, dur = 450) {
@@ -625,6 +765,42 @@ function Btn({ onClick, children, kind = "primary", disabled }) {
   );
 }
 
+/* ミッション生成（結果画面）：1〜3個をランダムに出す */
+function MissionBox() {
+  const [n, setN] = useState(1);
+  const [list, setList] = useState(null);
+  const generate = () => {
+    if (window.Sfx) { window.Sfx.unlock(); window.Sfx.win(); }
+    setList(sample(MISSIONS, n));
+  };
+  return (
+    <div style={{ background: C.paperCard, border: `1.5px solid ${C.line}`, borderRadius: 16, padding: "16px 16px 18px" }}>
+      <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700 }}>MISSION</div>
+      <div style={{ fontFamily: SANS, fontSize: 17, fontWeight: 800, color: C.ink, margin: "2px 0 4px" }}>今日のミッション</div>
+      <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.6 }}>
+        おでかけがちょっと楽しくなるお題を、ランダムで出します。
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, fontWeight: 600 }}>個数</span>
+        {[1, 2, 3].map((v) => (
+          <Chip key={v} active={n === v} onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setN(v); }}>{v}個</Chip>
+        ))}
+      </div>
+      <Btn kind="dark" onClick={generate}>🎯 ミッションを生成</Btn>
+      {list && (
+        <div className="fade" style={{ display: "grid", gap: 10, marginTop: 14 }}>
+          {list.map((m, i) => (
+            <div key={i} className="deal" style={{ animationDelay: `${i * 70}ms`, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" }}>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: C.signal, fontWeight: 700, marginBottom: 3 }}>{m.c}</div>
+              <div style={{ fontFamily: SANS, fontSize: 15.5, fontWeight: 700, color: C.ink, lineHeight: 1.5 }}>{m.t}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================
    メイン
    ============================================================ */
@@ -632,7 +808,10 @@ function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
-  const [hf, setHf] = useState({ priority: "standard", timeOn: false, timeMin: 0, timeMax: 60, history: null });
+  const [hf, setHf] = useState({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, history: "prefer" });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [base, setBase] = useState(BASE_DEFAULT);
   const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
   const [softWishes, setSoftWishes] = useState([]); // 任意条件フェーズ(STEP3)：重み付けのみ [key,...]
@@ -702,13 +881,15 @@ function App() {
 
   const candidates = useMemo(() => applyHard(stations, hf, timeMap, hardWishes), [stations, hf, timeMap, hardWishes]);
   const count = candidates.length;
+  const hardWishKeyCount = Object.keys(hardWishes).length;
 
   const resetFlow = () => {
-    setHf({ priority: "standard", time: null, history: null });
+    setHf({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, history: "prefer" });
     setHardWishes({}); setSoftWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
-    setLastRecordedId(null);
+    setLastRecordedId(null); setMenuOpen(false); setSettingsOpen(false);
     setScreen("home");
   };
+  const goHome = () => { setMenuOpen(false); setSettingsOpen(false); setScreen("home"); };
 
   // 【絶対条件フェーズ/STEP1】タップ：off ⇄ on（4以上に絞る）。選択中(on/top)ならoff。
   const toggleHardWish = (k) => setHardWishes((cur) => {
@@ -726,25 +907,25 @@ function App() {
   const toggleSoftWish = (k) => setSoftWishes((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
   const toggleExclude = (st) => setExcluded((cur) => (cur.includes(st.id) ? cur.filter((x) => x !== st.id) : [...cur, st.id]));
 
-  // ① 絶対条件で候補を出す → ② 今日の気分を反映して10件を表示
+  // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
-    setShown(sampleWeighted(candidates, softWishes, 10));
+    setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
 
-  // 希望条件（気分）画面へ
+  // 今日の気分（任意条件フェーズ）画面へ
   const goWishes = () => setScreen("step3");
 
   const reroll = () => {
     if (rerollUsed) return;
-    setShown(sampleWeighted(candidates, softWishes, 10));
+    setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
     setExcluded([]); setChosen(null); setRerollUsed(true); setScreen("pick10");
   };
 
-  // 1件を選び、抽選演出へ（希望条件があれば重み付き）
+  // 10件（「ここは嫌だ」除外後）から1件。気分未選択なら完全ランダム、選択なら気分スコアの積で重み付け。
   const runReveal = (pool) => {
     if (!pool.length) return;
-    const target = pickWeighted(pool, softWishes);
+    const target = pickBy(pool, (s) => softWeight(s, softWishes));
     setChosen(target);
     setLastChosen(target);
     setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
@@ -752,10 +933,8 @@ function App() {
     setRevealTarget(target.name);
     setScreen("reveal");
   };
-  // ④-1 いま出ている10件から「ここは嫌だ」以外の1件（この時点では希望なし＝均等）
-  const decideFromTen = () => runReveal(shown.filter((s) => !excluded.includes(s.id)));
-  // ⑤-2 「ここは嫌だ」を除いた全候補から、希望条件の重み付きで1件
-  const decideWithWishes = () => runReveal(candidates.filter((s) => !excluded.includes(s.id)));
+  // STEP3「この気分で1つ決める」：いま出ている10件（除外を除く）から決める
+  const decideWithWishes = () => runReveal(shown.filter((s) => !excluded.includes(s.id)));
 
   // 「行った」記録：訪問回数+1・最終訪問日を今日に
   const recordVisit = (st) => {
@@ -773,21 +952,70 @@ function App() {
   return (
     <Shell>
 
-      {/* ヘッダ */}
+      {/* ヘッダ：ロゴ / パンくず / ホームアイコン / ハンバーガー */}
       {screen !== "title" && (
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
-          <Logo size={28} />
-        </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <SoundToggle />
-          {screen !== "manage" ? (
-            <button onClick={() => setScreen("manage")} style={miniLink}>ココイッタ</button>
-          ) : (
-            <button onClick={resetFlow} style={miniLink}>戻る</button>
-          )}
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={goHome} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
+            <Logo size={26} />
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <HomeIconBtn onClick={goHome} />
+            <button
+              aria-label="メニュー"
+              onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setMenuOpen(true); }}
+              style={{
+                width: 40, height: 40, borderRadius: 12, border: `1.5px solid ${C.line}`,
+                background: C.paperCard, cursor: "pointer", display: "flex", alignItems: "center",
+                justifyContent: "center", fontSize: 20, lineHeight: 1, color: C.ink,
+              }}
+            >☰</button>
+          </div>
         </div>
+        <Breadcrumb screen={screen} onHome={goHome} />
       </div>
+      )}
+
+      {/* ハンバーガーメニュー */}
+      {menuOpen && (
+        <div style={modalWrap} onClick={() => setMenuOpen(false)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>メニュー</div>
+              <button onClick={() => setMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+            </div>
+            <MenuItem
+              icon="⚙️" title="設定"
+              desc="効果音のオン・オフを切り替えます。"
+              onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
+            />
+            <div style={{ height: 10 }} />
+            <MenuItem
+              icon="📍" title="ココイッタ登録"
+              desc="行った場所を記録して、回数を管理します。"
+              onClick={() => { setMenuOpen(false); setScreen("manage"); }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 設定モーダル */}
+      {settingsOpen && (
+        <div style={modalWrap} onClick={() => setSettingsOpen(false)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>設定</div>
+              <button onClick={() => setSettingsOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "14px 16px" }}>
+              <div>
+                <div style={{ fontFamily: SANS, fontSize: 16, fontWeight: 700, color: C.ink }}>効果音</div>
+                <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>抽選やタップ時の音を鳴らします。</div>
+              </div>
+              <SoundToggle />
+            </div>
+          </div>
+        </div>
       )}
 
       {screen === "title" && (
@@ -866,18 +1094,45 @@ function App() {
 
           <FieldLabel eyebrow="HISTORY" title="前に行った場所は？" />
           <Row>
-            <Chip active={hf.history === null} onClick={() => setHf({ ...hf, history: null })}>おまかせ</Chip>
-            <Chip active={hf.history === "unvisited"} onClick={() => setHf({ ...hf, history: "unvisited" })}>行ってない所だけ</Chip>
-            <Chip active={hf.history === "excludeRecent"} onClick={() => setHf({ ...hf, history: "excludeRecent" })}>最近行った所はナシ</Chip>
+            <Chip active={hf.history === "all"} onClick={() => setHf({ ...hf, history: "all" })}>行った場所もOK</Chip>
+            <Chip active={hf.history === "prefer"} onClick={() => setHf({ ...hf, history: "prefer" })}>行ってない場所を優先</Chip>
+            <Chip active={hf.history === "only"} onClick={() => setHf({ ...hf, history: "only" })}>行ってない場所だけ</Chip>
           </Row>
-
-          <FieldLabel eyebrow="MOOD" title="今日の気分（任意）" />
-          <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "-4px 0 2px", lineHeight: 1.6 }}>
-            <b>タップ</b>＝その気分が<b>4以上</b>の駅だけに<b>絞り込みます</b>。<br />
-            <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、<b>5点（最高）</b>の駅だけにさらに絞り込みます。<br />
-            <span style={{ color: C.muted }}>（この段階は絞り込み。複数選ぶと候補が減ります）</span>
+          <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: "-8px 0 18px", lineHeight: 1.6 }}>
+            {hf.history === "prefer"
+              ? "「優先」＝行った回数が多いほど当たりにくくします（候補は減りません）。"
+              : hf.history === "only"
+              ? "「行ってない場所だけ」＝一度でも行った場所は候補から外します。"
+              : "「行った場所もOK」＝履歴を気にせず選びます。"}
           </p>
-          <WishPicker wishes={hardWishes} onToggle={toggleHardWish} onTop={topHardWish} />
+
+          {/* その他の絶対条件（旧・今日の気分）：折りたたみ */}
+          <button
+            onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setMoodOpen((v) => !v); }}
+            style={{
+              width: "100%", textAlign: "left", background: C.paperCard, border: `1.5px solid ${C.line}`,
+              borderRadius: 12, padding: "13px 15px", cursor: "pointer", display: "flex",
+              justifyContent: "space-between", alignItems: "center", marginBottom: moodOpen ? 6 : 0,
+            }}
+          >
+            <span>
+              <span style={{ display: "block", fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700 }}>OTHER</span>
+              <span style={{ display: "block", fontFamily: SANS, fontSize: 16, fontWeight: 700, color: C.ink, marginTop: 2 }}>
+                その他の絶対条件{hardWishKeyCount > 0 ? `（${hardWishKeyCount}）` : ""}
+              </span>
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 18, color: C.signal, fontWeight: 700 }}>{moodOpen ? "－" : "＋"}</span>
+          </button>
+          {moodOpen && (
+            <div className="fade">
+              <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "4px 0 2px", lineHeight: 1.6 }}>
+                <b>タップ</b>＝その条件が<b>4以上</b>の駅だけに<b>絞り込みます</b>。<br />
+                <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、<b>5点（最高）</b>の駅だけにさらに絞り込みます。<br />
+                <span style={{ color: C.muted }}>（この段階は絞り込み。複数選ぶと候補が減ります）</span>
+              </p>
+              <WishPicker wishes={hardWishes} onToggle={toggleHardWish} onTop={topHardWish} />
+            </div>
+          )}
 
           <div style={{ height: 26 }} />
           <Btn onClick={search10} disabled={count === 0}>この条件で候補を出す →</Btn>
@@ -919,11 +1174,9 @@ function App() {
                 ))}
               </div>
               <div style={{ height: 22 }} />
-              <Btn kind="dark" onClick={decideFromTen} disabled={remaining === 0}>
-                🎲 ここから1つ決める！
+              <Btn kind="dark" onClick={goWishes} disabled={remaining === 0}>
+                ここから一つ決める →
               </Btn>
-              <div style={{ height: 12 }} />
-              <Btn onClick={goWishes}>気分を選ぶ・変える →</Btn>
               {remaining === 0 && (
                 <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
                   全部外しています。どれか戻すか、条件を足して選び直してください。
@@ -936,15 +1189,28 @@ function App() {
       })()}
 
       {screen === "step3" && (() => {
-        const pool = candidates.filter((s) => !excluded.includes(s.id));
+        const pool = shown.filter((s) => !excluded.includes(s.id));
+        const hasMood = softWishes.length > 0;
         return (
         <Fade key="step3">
-          <StepHead n="03" title="今日の気分は？" sub="ここは絞り込みません。選ぶほど、その気分に合う駅が強く当たりやすくなります。" />
-          <Board count={pool.length} note="候補は減りません。当たりやすさが大きく変わります。" />
-          <div style={{ height: 4 }} />
+          <StepHead n="03" title="今日の気分はありますか？" sub="ここは絞り込みません。気分は選んでも選ばなくてもOK。" />
+          <div style={{
+            background: hasMood ? "rgba(14,140,129,.08)" : C.paperCard,
+            border: `1.5px solid ${hasMood ? C.signal : C.line}`, borderRadius: 14, padding: "13px 16px", marginBottom: 16,
+          }}>
+            <p style={{ fontFamily: SANS, fontSize: 13, color: C.ink, margin: 0, lineHeight: 1.7 }}>
+              🎲 <b>気分を選ばない</b> → 残り{pool.length}件から<b>完全ランダム</b>で決めます。<br />
+              💚 <b>気分を選ぶ</b> → 選んだ気分に<b>合う駅ほど当たりやすく</b>なります（重み付け）。<br />
+              <span style={{ color: C.muted, fontSize: 12 }}>
+                いまは{hasMood ? `気分を${softWishes.length}個選択中 → 重み付けで決定` : "未選択 → 完全ランダムで決定"}
+              </span>
+            </p>
+          </div>
           <SoftWishPicker selected={softWishes} onToggle={toggleSoftWish} />
           <div style={{ height: 18 }} />
-          <Btn onClick={decideWithWishes} disabled={pool.length === 0}>🎲 この気分で1つ決める！</Btn>
+          <Btn onClick={decideWithWishes} disabled={pool.length === 0}>
+            {hasMood ? "🎲 この気分で1つ決める！" : "🎲 ランダムで1つ決める！"}
+          </Btn>
           {pool.length === 0 && (
             <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
               候補がありません。前の画面で戻すか、条件をゆるめてください。
@@ -989,22 +1255,10 @@ function App() {
             recorded={lastRecordedId === chosen.id}
             onRecorded={() => { recordVisit(chosen); setLastRecordedId(chosen.id); }}
           />
-          <div style={{ height: 12 }} />
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <Btn kind="ghost" onClick={reroll} disabled={rerollUsed}>
-                {rerollUsed ? "再抽選は1回まで" : "再度決め直す"}
-              </Btn>
-            </div>
-            <div style={{ flex: 1 }}>
-              <Btn kind="ghost" onClick={resetFlow}>最初から</Btn>
-            </div>
-          </div>
-          {rerollUsed && (
-            <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", marginTop: 12 }}>
-              決め直しは1回まで。今日はこの縁で。
-            </p>
-          )}
+          <div style={{ height: 22 }} />
+          <MissionBox />
+          <div style={{ height: 16 }} />
+          <Btn kind="ghost" onClick={goHome}>🏠 ホームに戻る</Btn>
         </Fade>
       )}
 
@@ -1203,6 +1457,77 @@ const miniLink = {
   background: "none", border: `1px solid ${C.line}`, borderRadius: 999, padding: "7px 14px",
   fontFamily: SANS, fontSize: 13, color: C.inkSoft, cursor: "pointer", fontWeight: 600,
 };
+
+/* ホームアイコン（常時表示） */
+function HomeIconBtn({ onClick }) {
+  return (
+    <button
+      aria-label="ホームへ"
+      onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onClick(); }}
+      style={{
+        width: 40, height: 40, borderRadius: 12, border: `1.5px solid ${C.line}`,
+        background: C.paperCard, cursor: "pointer", display: "flex", alignItems: "center",
+        justifyContent: "center", padding: 0,
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.signal} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 11.5 12 4l9 7.5" /><path d="M5 10v9h5v-5h4v5h5v-9" />
+      </svg>
+    </button>
+  );
+}
+
+/* パンくずリスト */
+const CRUMBS = {
+  home: ["ホーム"],
+  step1: ["ホーム", "条件"],
+  pick10: ["ホーム", "条件", "候補"],
+  step3: ["ホーム", "条件", "候補", "今日の気分"],
+  reveal: ["ホーム", "条件", "候補", "結果"],
+  final: ["ホーム", "条件", "候補", "結果"],
+  manage: ["ホーム", "ココイッタ"],
+};
+function Breadcrumb({ screen, onHome }) {
+  const items = CRUMBS[screen] || ["ホーム"];
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, marginTop: 10, fontFamily: MONO, fontSize: 11.5 }}>
+      {items.map((label, i) => {
+        const last = i === items.length - 1;
+        const isHome = i === 0;
+        return (
+          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            {i > 0 && <span style={{ color: C.muted }}>›</span>}
+            {isHome && !last ? (
+              <button onClick={onHome} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 11.5, color: C.signal, fontWeight: 700 }}>{label}</button>
+            ) : (
+              <span style={{ color: last ? C.ink : C.muted, fontWeight: last ? 800 : 600 }}>{label}</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/* メニュー項目（アイコン・タイトル・1文説明） */
+function MenuItem({ icon, title, desc, onClick }) {
+  return (
+    <button
+      onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onClick(); }}
+      style={{
+        width: "100%", textAlign: "left", background: C.paperCard, border: `1px solid ${C.line}`,
+        borderRadius: 14, padding: "14px 16px", cursor: "pointer", display: "flex", gap: 12, alignItems: "center",
+      }}
+    >
+      <span style={{ fontSize: 24, lineHeight: 1, flex: "0 0 auto" }}>{icon}</span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontFamily: SANS, fontSize: 16, fontWeight: 800, color: C.ink }}>{title}</span>
+        <span style={{ display: "block", fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>{desc}</span>
+      </span>
+      <span style={{ fontFamily: MONO, fontSize: 16, color: C.muted }}>›</span>
+    </button>
+  );
+}
 
 /* ============================================================
    駅管理
