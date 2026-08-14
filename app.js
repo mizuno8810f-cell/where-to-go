@@ -99,8 +99,9 @@ const isRecent = (st) => st.lastVisit && NOW - Date.parse(st.lastVisit) < RECENT
 // 絶対条件：searchPriority と 所要時間（＋訪問履歴）で候補から除外する
 // priorityMode: standard=定番(P1) / hidden=穴場も(P1,2) / adventure=超冒険(P1,2,3)
 const PRIORITY_SET = { standard: [1], hidden: [1, 2], adventure: [1, 2, 3] };
-function applyHard(list, hf, timeMap) {
+function applyHard(list, hf, timeMap, wishes) {
   const allowed = PRIORITY_SET[hf.priority] || PRIORITY_SET.standard;
+  const wishKeys = wishes ? Object.keys(wishes) : [];
   return list.filter((st) => {
     if (!allowed.includes(st.pr)) return false;
     if (hf.timeOn) {
@@ -110,6 +111,11 @@ function applyHard(list, hf, timeMap) {
     }
     if (hf.history === "unvisited" && st.visited) return false;
     if (hf.history === "excludeRecent" && isRecent(st)) return false;
+    // 気分＝絞り込み：on は 4以上、top（最優先）は 5 のみ。複数選択はすべて満たす必要あり。
+    for (const k of wishKeys) {
+      const need = wishes[k] === "top" ? 5 : 4;
+      if ((st.scores[k] || 0) < need) return false;
+    }
     return true;
   });
 }
@@ -204,12 +210,12 @@ const WISH_GROUPS = [
 function matchTags(st, wishes) {
   const label = {};
   WISH_GROUPS.forEach((g) => g.items.forEach(([k, l]) => { label[k] = l.replace(/^[^\s]+\s/, ""); }));
-  return wishes
-    .map((k) => ({ k, label: label[k], score: st.scores[k] || 3 }))
-    .filter((x) => x.score >= 3)
+  const keys = wishes ? Object.keys(wishes) : [];
+  return keys
+    .map((k) => ({ k, label: label[k], score: st.scores[k] || 3, top: wishes[k] === "top" }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((x) => ({ label: x.label, mark: x.score >= 4 ? "◎" : "○" }));
+    .slice(0, 4)
+    .map((x) => ({ label: x.label, mark: x.top ? "★" : (x.score >= 4 ? "◎" : "○") }));
 }
 
 /* カウントの数値をなめらかに変える */
@@ -297,7 +303,50 @@ function FieldLabel({ eyebrow, title }) {
 }
 
 /* 今日の気分（希望条件）チップ群：STEP1・STEP3で共用 */
-function WishPicker({ wishes, onToggle }) {
+/* 気分チップ：タップ=4以上に絞る / 長押し=★最優先(5のみ) */
+function WishChip({ label, state, onToggle, onTop }) {
+  const timer = useRef(null);
+  const longRef = useRef(false);
+  const start = () => {
+    longRef.current = false;
+    timer.current = setTimeout(() => {
+      longRef.current = true;
+      if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.plus(); }
+      onTop();
+    }, 450);
+  };
+  const end = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  const click = () => {
+    if (longRef.current) { longRef.current = false; return; } // 長押し後のクリックは無視
+    if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); }
+    onToggle();
+  };
+  const top = state === "top";
+  const on = state === "on" || top;
+  const bg = top ? C.amber : on ? C.signal : C.paperCard;
+  const fg = on ? "#fff" : C.ink;
+  const bd = top ? C.amber : on ? C.signal : C.line;
+  return (
+    <button
+      onPointerDown={start}
+      onPointerUp={end}
+      onPointerLeave={end}
+      onPointerCancel={end}
+      onClick={click}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        appearance: "none", border: `1.5px solid ${bd}`, background: bg, color: fg,
+        borderRadius: 999, padding: "11px 16px", fontFamily: SANS, fontSize: 15,
+        fontWeight: on ? 700 : 500, cursor: "pointer", transition: "all .15s ease",
+        boxShadow: on ? `0 2px 0 ${top ? "#b9791f" : C.signalDim}` : "none",
+        touchAction: "manipulation", userSelect: "none", WebkitUserSelect: "none",
+      }}
+    >
+      {top ? "★ " : ""}{label}
+    </button>
+  );
+}
+function WishPicker({ wishes, onToggle, onTop }) {
   return (
     <>
       {WISH_GROUPS.map((g) => (
@@ -307,7 +356,7 @@ function WishPicker({ wishes, onToggle }) {
           </div>
           <Row>
             {g.items.map(([k, label]) => (
-              <Chip key={k} active={wishes.includes(k)} onClick={() => onToggle(k)}>{label}</Chip>
+              <WishChip key={k} label={label} state={wishes[k]} onToggle={() => onToggle(k)} onTop={() => onTop(k)} />
             ))}
           </Row>
         </div>
@@ -561,7 +610,7 @@ function App() {
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
   const [hf, setHf] = useState({ priority: "standard", timeOn: false, timeMin: 0, timeMax: 60, history: null });
   const [base, setBase] = useState(BASE_DEFAULT);
-  const [wishes, setWishes] = useState([]);
+  const [wishes, setWishes] = useState({}); // { key: "on"(4以上) | "top"(5のみ・最優先) }
   const [shown, setShown] = useState([]);
   const [excluded, setExcluded] = useState([]);
   const [chosen, setChosen] = useState(null);
@@ -620,22 +669,33 @@ function App() {
     return t == null ? "経路なし" : `約${t}分`;
   };
 
-  const candidates = useMemo(() => applyHard(stations, hf, timeMap), [stations, hf, timeMap]);
+  const candidates = useMemo(() => applyHard(stations, hf, timeMap, wishes), [stations, hf, timeMap, wishes]);
   const count = candidates.length;
 
   const resetFlow = () => {
     setHf({ priority: "standard", time: null, history: null });
-    setWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
+    setWishes({}); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setLastRecordedId(null);
     setScreen("home");
   };
 
-  const toggleWish = (k) => setWishes((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+  // タップ：off ⇄ on（4以上に絞る）。既に選択中(on/top)ならoff。
+  const toggleWish = (k) => setWishes((cur) => {
+    const next = { ...cur };
+    if (next[k]) delete next[k]; else next[k] = "on";
+    return next;
+  });
+  // 長押し：最優先(top＝5のみ)に。既にtopならoffに戻す。
+  const topWish = (k) => setWishes((cur) => {
+    const next = { ...cur };
+    if (next[k] === "top") delete next[k]; else next[k] = "top";
+    return next;
+  });
   const toggleExclude = (st) => setExcluded((cur) => (cur.includes(st.id) ? cur.filter((x) => x !== st.id) : [...cur, st.id]));
 
   // ① 絶対条件で候補を出す → ② 今日の気分を反映して10件を表示
   const search10 = () => {
-    setShown(sampleWeighted(candidates, wishes, 10));
+    setShown(sample(candidates, 10));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
 
@@ -644,14 +704,14 @@ function App() {
 
   const reroll = () => {
     if (rerollUsed) return;
-    setShown(sampleWeighted(candidates, wishes, 10));
+    setShown(sample(candidates, 10));
     setExcluded([]); setChosen(null); setRerollUsed(true); setScreen("pick10");
   };
 
   // 1件を選び、抽選演出へ（希望条件があれば重み付き）
   const runReveal = (pool) => {
     if (!pool.length) return;
-    const target = pickWeighted(pool, wishes);
+    const target = pool[Math.floor(Math.random() * pool.length)];
     setChosen(target);
     setLastChosen(target);
     setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
@@ -779,10 +839,12 @@ function App() {
           </Row>
 
           <FieldLabel eyebrow="MOOD" title="今日の気分（任意）" />
-          <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.muted, margin: "-4px 0 2px", lineHeight: 1.5 }}>
-            選ぶと、その気分に合う場所が当たりやすくなります（候補は減りません）。あとの画面でも変えられます。
+          <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "-4px 0 2px", lineHeight: 1.6 }}>
+            <b>タップ</b>＝その気分が<b>強め（5段階中4以上）</b>の駅だけに絞り込み。<br />
+            <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、<b>5のみ</b>の駅にさらに絞ります。<br />
+            <span style={{ color: C.muted }}>複数選ぶと、すべての条件を満たす駅だけが残ります（候補は減ります）。</span>
           </p>
-          <WishPicker wishes={wishes} onToggle={toggleWish} />
+          <WishPicker wishes={wishes} onToggle={toggleWish} onTop={topWish} />
 
           <div style={{ height: 26 }} />
           <Btn onClick={search10} disabled={count === 0}>この条件で候補を出す →</Btn>
@@ -844,10 +906,10 @@ function App() {
         const pool = candidates.filter((s) => !excluded.includes(s.id));
         return (
         <Fade key="step3">
-          <StepHead n="03" title="今日の気分は？" sub="えらぶほど、その気分に合う場所が当たりやすくなります。STEP1で選んだ分も反映済み。" />
-          <Board count={pool.length} note="候補は減りません。当たりやすさが変わります。" />
+          <StepHead n="03" title="今日の気分は？" sub="タップ＝4以上に絞る／長押し＝★最優先(5のみ)。STEP1の条件も反映済み。" />
+          <Board count={pool.length} note={pool.length === 0 ? "しぼりすぎかも" : "選ぶほど候補が絞られます"} />
           <div style={{ height: 4 }} />
-          <WishPicker wishes={wishes} onToggle={toggleWish} />
+          <WishPicker wishes={wishes} onToggle={toggleWish} onTop={topWish} />
           <div style={{ height: 18 }} />
           <Btn onClick={decideWithWishes} disabled={pool.length === 0}>🎲 この気分で1つ決める！</Btn>
           {pool.length === 0 && (
