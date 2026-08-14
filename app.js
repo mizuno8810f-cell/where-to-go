@@ -111,10 +111,10 @@ function applyHard(list, hf, timeMap, wishes) {
     }
     if (hf.history === "unvisited" && st.visited) return false;
     if (hf.history === "excludeRecent" && isRecent(st)) return false;
-    // 気分＝絞り込み：on は 4以上、top（最優先）は 5 のみ。複数選択はすべて満たす必要あり。
+    // ★最優先（長押し=top）だけをハード絞り込み：その気分が 5 の駅のみ残す。
+    // 通常のタップ(on)は絞り込まず、抽選の重み付け（当たりやすさ）に使う。
     for (const k of wishKeys) {
-      const need = wishes[k] === "top" ? 5 : 4;
-      if ((st.scores[k] || 0) < need) return false;
+      if (wishes[k] === "top" && (st.scores[k] || 0) < 5) return false;
     }
     return true;
   });
@@ -123,10 +123,11 @@ function applyHard(list, hf, timeMap, wishes) {
 // 希望条件（dateScores）: 除外せず抽選確率だけ上げる重み付け
 // 選択キーの平均スコア(1..5)を 1.9^(avg-3) に変換（3で等倍、5で約3.6倍、1で約0.28倍）
 function weightOf(st, wishes) {
-  if (!wishes.length) return 1;
+  const keys = wishes ? Object.keys(wishes) : [];
+  if (!keys.length) return 1;
   let sum = 0;
-  wishes.forEach((k) => { sum += st.scores[k] || 3; });
-  const avg = sum / wishes.length;
+  keys.forEach((k) => { sum += st.scores[k] || 3; });
+  const avg = sum / keys.length;
   return Math.pow(1.9, avg - 3);
 }
 function pickWeighted(pool, wishes) {
@@ -149,7 +150,7 @@ function sample(pool, n) {
 }
 // 希望条件の重みでランダムに n 件（重複なし）。希望なしなら均等。
 function sampleWeighted(pool, wishes, n) {
-  if (!wishes.length) return sample(pool, n);
+  if (!wishes || !Object.keys(wishes).length) return sample(pool, n);
   const items = [...pool];
   const out = [];
   while (out.length < n && items.length) {
@@ -695,7 +696,7 @@ function App() {
 
   // ① 絶対条件で候補を出す → ② 今日の気分を反映して10件を表示
   const search10 = () => {
-    setShown(sample(candidates, 10));
+    setShown(sampleWeighted(candidates, wishes, 10));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
 
@@ -704,14 +705,14 @@ function App() {
 
   const reroll = () => {
     if (rerollUsed) return;
-    setShown(sample(candidates, 10));
+    setShown(sampleWeighted(candidates, wishes, 10));
     setExcluded([]); setChosen(null); setRerollUsed(true); setScreen("pick10");
   };
 
   // 1件を選び、抽選演出へ（希望条件があれば重み付き）
   const runReveal = (pool) => {
     if (!pool.length) return;
-    const target = pool[Math.floor(Math.random() * pool.length)];
+    const target = pickWeighted(pool, wishes);
     setChosen(target);
     setLastChosen(target);
     setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
@@ -840,9 +841,8 @@ function App() {
 
           <FieldLabel eyebrow="MOOD" title="今日の気分（任意）" />
           <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "-4px 0 2px", lineHeight: 1.6 }}>
-            <b>タップ</b>＝その気分が<b>強め（5段階中4以上）</b>の駅だけに絞り込み。<br />
-            <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、<b>5のみ</b>の駅にさらに絞ります。<br />
-            <span style={{ color: C.muted }}>複数選ぶと、すべての条件を満たす駅だけが残ります（候補は減ります）。</span>
+            <b>タップ</b>＝その気分に合う場所が<b>当たりやすくなります</b>（候補は減りません）。<br />
+            <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、その気分が<b>5点（最高）の駅だけに絞り込みます</b>（候補が減ります）。
           </p>
           <WishPicker wishes={wishes} onToggle={toggleWish} onTop={topWish} />
 
@@ -906,8 +906,8 @@ function App() {
         const pool = candidates.filter((s) => !excluded.includes(s.id));
         return (
         <Fade key="step3">
-          <StepHead n="03" title="今日の気分は？" sub="タップ＝4以上に絞る／長押し＝★最優先(5のみ)。STEP1の条件も反映済み。" />
-          <Board count={pool.length} note={pool.length === 0 ? "しぼりすぎかも" : "選ぶほど候補が絞られます"} />
+          <StepHead n="03" title="今日の気分は？" sub="タップ＝当たりやすくなる／長押し＝★最優先(5のみに絞る)。STEP1の条件も反映済み。" />
+          <Board count={pool.length} note={pool.length === 0 ? "しぼりすぎかも" : "★最優先だけ候補が絞られます"} />
           <div style={{ height: 4 }} />
           <WishPicker wishes={wishes} onToggle={toggleWish} onTop={topWish} />
           <div style={{ height: 18 }} />
