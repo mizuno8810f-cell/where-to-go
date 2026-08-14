@@ -19,10 +19,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Generate Supabase config (公開用キーのみ / Secretsから)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          cat > config.js <<EOF
+          /* 自動生成: GitHub Actions が Secrets から作成。公開用(anon)キーのみ。 */
+          window.__SUPABASE__ = {
+            url: "${SUPABASE_URL}",
+            anonKey: "${SUPABASE_ANON_KEY}",
+          };
+          EOF
+
       - name: Stage static site
         run: |
           mkdir -p _site
-          cp index.html app.js style.css _site/
+          cp index.html app.js style.css supabase-client.js config.js _site/
           cp -r data _site/
       - name: Setup Pages
         uses: actions/configure-pages@v5

@@ -784,9 +784,7 @@ function App() {
             <Ticket st={chosen} timeText={hf.time || timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
           </div>
           <div style={{ height: 22 }} />
-          <Btn kind="primary" onClick={() => recordVisit(chosen)}>
-            {chosen.visited && chosen.lastVisit === new Date().toISOString().slice(0, 10) ? "記録しました ✓" : "行ってきた！を記録"}
-          </Btn>
+          <VisitControl station={chosen} onRecorded={() => recordVisit(chosen)} />
           <div style={{ height: 12 }} />
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
@@ -810,6 +808,116 @@ function App() {
         <Manage stations={stations} onChange={persist} />
       )}
     </Shell>
+  );
+}
+
+/* ============================================================
+   Supabase 訪問履歴（クラウド保存・匿名認証）
+   window.SupaHistory は supabase-client.js が定義。
+   未設定/接続不可でもアプリ本体は通常動作（graceful degradation）。
+   ============================================================ */
+function VisitControl({ station, onRecorded }) {
+  const [enabled, setEnabled] = useState(false);
+  const [count, setCount] = useState(null); // null=不明/読み込み中
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
+  const localDoneToday = station.visited && station.lastVisit === today;
+
+  // 駅が切り替わったら、その駅の訪問回数を取り直す
+  useEffect(() => {
+    let alive = true;
+    setCount(null); setToast("");
+    (async () => {
+      const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+      if (!SH) { if (alive) setEnabled(false); return; }
+      let ok = false;
+      try { ok = await SH.ready(); } catch (e) { ok = false; }
+      if (!alive) return;
+      setEnabled(ok);
+      if (ok) {
+        try { const c = await SH.getVisitCount(station.id); if (alive) setCount(c); }
+        catch (e) { if (alive) setCount(null); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [station.id]);
+
+  const onGo = async () => {
+    if (saving) return;            // 連打による二重登録を防止
+    setSaving(true); setToast("");
+    const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+    try {
+      if (enabled && SH) {
+        await SH.addVisit(station.id);
+        setCount((c) => (c == null ? 1 : c + 1)); // 表示回数を即時+1
+      }
+      if (onRecorded) onRecorded();  // 既存のローカル記録も更新
+      setToast("「行った！」に追加しました");
+    } catch (e) {
+      setToast("履歴の保存に失敗しました。もう一度お試しください。");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      {enabled && (
+        <div style={{ fontFamily: MONO, fontSize: 12, color: C.signal, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>
+          行った回数：{count == null ? "…" : count}回
+        </div>
+      )}
+      <Btn kind="primary" onClick={onGo} disabled={saving}>
+        {saving ? "保存中…" : "行った！"}
+      </Btn>
+      {toast && (
+        <p style={{ fontFamily: SANS, fontSize: 13, fontWeight: 700, textAlign: "center", marginTop: 10, color: toast.indexOf("失敗") >= 0 ? C.danger : C.signal }}>
+          {toast}
+        </p>
+      )}
+      {!enabled && (
+        <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", marginTop: 8 }}>
+          {localDoneToday ? "今日ぶんを記録済み（この端末内）" : "クラウド保存は未設定のため、この端末内にのみ記録します"}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RecentVisits({ stations }) {
+  const [rows, setRows] = useState(null); // null=読み込み中, false=無効, []=なし
+  const nameOf = useMemo(() => {
+    const m = {}; stations.forEach((s) => { m[s.id] = s; }); return m;
+  }, [stations]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+      let ok = false;
+      try { ok = SH ? await SH.ready() : false; } catch (e) { ok = false; }
+      if (!ok) { if (alive) setRows(false); return; }
+      try { const r = await SH.getRecentVisits(10); if (alive) setRows(r); }
+      catch (e) { if (alive) setRows(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  if (!rows || rows.length === 0) return null; // 無効/なしのときは何も出さない
+  const md = (ts) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "4px 2px 8px" }}>最近ココイッタ駅（クラウド保存）</div>
+      <div style={{ display: "grid", gap: 6 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 12px" }}>
+            <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.ink }}>
+              {nameOf[r.station_id] ? nameOf[r.station_id].name : r.station_id}
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>{md(r.visited_at)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -905,6 +1013,7 @@ function Manage({ stations, onChange }) {
   return (
     <Fade key="manage">
       <StepHead n="—" title="駅の記録" sub={`全${stations.length}駅。行った所を記録できます。`} />
+      <RecentVisits stations={stations} />
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="駅名でさがす（例：横浜）"
         style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink }} />
       <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "12px 2px" }}>

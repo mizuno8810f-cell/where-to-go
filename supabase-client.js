@@ -1,0 +1,104 @@
+/* ============================================================
+   Supabase 訪問履歴クライアント（匿名認証）
+   - React(app.js) より前に、素の <script> として読み込む。
+   - window.__SUPABASE__ (config.js) と window.supabase (supabase-js CDN) を利用。
+   - 公開用(anon public)キーのみを使用。service_role キーは絶対に使わない。
+   - 未設定/接続不可でも throw せず、window.SupaHistory.enabled=false で無効化する。
+   ============================================================ */
+(function () {
+  "use strict";
+
+  var cfg = (typeof window !== "undefined" && window.__SUPABASE__) || {};
+  var configured =
+    !!cfg.url && !!cfg.anonKey &&
+    cfg.url.indexOf("YOUR_") === -1 &&
+    cfg.anonKey.indexOf("YOUR_") === -1;
+
+  var state = { enabled: false, client: null, userId: null, ready: null };
+
+  function makeApi() {
+    return {
+      get configured() { return configured; },
+      get enabled() { return state.enabled; },
+      get userId() { return state.userId; },
+      ready: function () { return state.ready; },
+
+      // 現在の匿名ユーザーが、その駅へ行った回数（RLSにより自分の行だけが対象）
+      getVisitCount: async function (stationId) {
+        if (!state.enabled) return 0;
+        var res = await state.client
+          .from("station_visits")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", state.userId)
+          .eq("station_id", stationId);
+        if (res.error) throw res.error;
+        return res.count || 0;
+      },
+
+      // 「行った」を1レコード追加（複数回行けば複数レコード）
+      addVisit: async function (stationId) {
+        if (!state.enabled) throw new Error("supabase-disabled");
+        var res = await state.client
+          .from("station_visits")
+          .insert({ user_id: state.userId, station_id: stationId });
+        if (res.error) throw res.error;
+        return true;
+      },
+
+      // 直近の訪問履歴（自分のぶんのみ）
+      getRecentVisits: async function (limit) {
+        if (!state.enabled) return [];
+        var res = await state.client
+          .from("station_visits")
+          .select("station_id, visited_at")
+          .eq("user_id", state.userId)
+          .order("visited_at", { ascending: false })
+          .limit(limit || 10);
+        if (res.error) throw res.error;
+        return res.data || [];
+      },
+    };
+  }
+
+  // 設定なし or supabase-js 未読込 → 無効化して終了（アプリ本体は通常動作）
+  if (!configured || !window.supabase || !window.supabase.createClient) {
+    state.ready = Promise.resolve(false);
+    if (!configured) {
+      console.warn("[SupaHistory] Supabase未設定（config.js）。訪問履歴のクラウド保存は無効です。");
+    } else {
+      console.warn("[SupaHistory] supabase-js を読み込めませんでした。訪問履歴のクラウド保存は無効です。");
+    }
+    window.SupaHistory = makeApi();
+    return;
+  }
+
+  var client = window.supabase.createClient(cfg.url, cfg.anonKey, {
+    auth: {
+      persistSession: true,     // 同じブラウザでセッションを維持（再訪問で履歴復元）
+      autoRefreshToken: true,
+      storageKey: "dokoiku-auth",
+    },
+  });
+  state.client = client;
+
+  // 初回のみ匿名サインイン。既存セッションがあればそれを使う。
+  state.ready = (async function () {
+    try {
+      var session = (await client.auth.getSession()).data.session;
+      if (!session) {
+        var r = await client.auth.signInAnonymously();
+        if (r.error) throw r.error;
+        session = r.data.session;
+      }
+      state.userId = session && session.user ? session.user.id : null;
+      state.enabled = !!state.userId;
+      return state.enabled;
+    } catch (e) {
+      console.error("[SupaHistory] 匿名認証に失敗しました:", (e && e.message) || e);
+      state.enabled = false;
+      return false;
+    }
+  })();
+
+  window.SupaHistory = makeApi();
+})();

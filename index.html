@@ -19,6 +19,11 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <!-- ブラウザ内で JSX を変換（CDN） -->
     <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+    <!-- Supabase（訪問履歴・匿名認証）。app.js より前に読み込む -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+    <script src="./supabase-client.js"></script>
   </head>
   <body>
     <div id="root"></div>

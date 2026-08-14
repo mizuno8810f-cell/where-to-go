@@ -1,3 +1,8 @@
 node_modules
 .DS_Store
 *.local
+
+# Supabase 接続情報（公開用キーでもコミットしない。本番はActionsが生成）
+config.js
+.env
+.env.local
