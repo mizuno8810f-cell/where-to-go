@@ -830,6 +830,23 @@ function App() {
           <div className="reveal">
             <Ticket st={chosen} timeText={hf.time || timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
           </div>
+          {chosen.hotpepperUrl && (
+            <a
+              href={chosen.hotpepperUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } }}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                width: "100%", boxSizing: "border-box", padding: "14px 16px", borderRadius: 14,
+                marginTop: 16, background: "#fff", border: `1.5px solid ${C.amber}`, color: C.amber,
+                fontFamily: SANS, fontSize: 15.5, fontWeight: 800, textDecoration: "none",
+                boxShadow: `0 3px 0 ${C.amber}55`,
+              }}
+            >
+              🍽 この駅でグルメを探す（ホットペッパー）
+            </a>
+          )}
           <div style={{ height: 22 }} />
           <VisitControl
             station={chosen}
@@ -1259,6 +1276,7 @@ async function boot() {
       pr: s.searchPriority,
       dateFeature: s.dateFeature,
       scores: s.scores,
+      hotpepperUrl: s.hotpepperUrl || null,
       visited: false,
       lastVisit: null,
       visitCount: 0,
