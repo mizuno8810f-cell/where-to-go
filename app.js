@@ -765,13 +765,11 @@ function Btn({ onClick, children, kind = "primary", disabled }) {
   );
 }
 
-/* ミッション生成（結果画面）：1〜3個をランダムに出す */
-function MissionBox() {
-  const [n, setN] = useState(1);
-  const [list, setList] = useState(null);
+/* ミッション生成（結果画面）：1〜3個をランダムに出す。状態は App が保持（共有・復元のため） */
+function MissionBox({ n, onN, list, onGenerate }) {
   const generate = () => {
     if (window.Sfx) { window.Sfx.unlock(); window.Sfx.win(); }
-    setList(sample(MISSIONS, n));
+    onGenerate(sample(MISSIONS, n));
   };
   return (
     <div style={{ background: C.paperCard, border: `1.5px solid ${C.line}`, borderRadius: 16, padding: "16px 16px 18px" }}>
@@ -783,10 +781,10 @@ function MissionBox() {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, fontWeight: 600 }}>個数</span>
         {[1, 2, 3].map((v) => (
-          <Chip key={v} active={n === v} onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setN(v); }}>{v}個</Chip>
+          <Chip key={v} active={n === v} onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onN(v); }}>{v}個</Chip>
         ))}
       </div>
-      <Btn kind="dark" onClick={generate}>🎯 ミッションを生成</Btn>
+      <Btn kind="dark" onClick={generate}>{list ? "🎯 ミッションを引き直す" : "🎯 ミッションを生成"}</Btn>
       {list && (
         <div className="fade" style={{ display: "grid", gap: 10, marginTop: 14 }}>
           {list.map((m, i) => (
@@ -865,6 +863,32 @@ function App() {
     if (typeof window !== "undefined") window.scrollTo(0, 0);
   }, [screen]);
 
+  // 共有リンク(#r=駅&b=出発駅&m=ミッション)で開かれたら、同じ結果画面を復元する
+  const sharedApplied = useRef(false);
+  useEffect(() => {
+    if (!ready || sharedApplied.current) return;
+    try {
+      const h = (typeof location !== "undefined" && location.hash) || "";
+      const rm = h.match(/[#&]r=([^&]+)/);
+      if (rm) {
+        const st = stations.find((s) => s.id === decodeURIComponent(rm[1]));
+        if (st) {
+          const bm = h.match(/[#&]b=([^&]+)/);
+          if (bm) setBase(decodeURIComponent(bm[1])); // 表示用のみ（Cookieには保存しない）
+          const mm = h.match(/[#&]m=([^&]+)/);
+          if (mm) {
+            const idxs = decodeURIComponent(mm[1]).split(",").map(Number).filter((i) => !isNaN(i) && MISSIONS[i]);
+            if (idxs.length) { setMissionList(idxs.map((i) => MISSIONS[i])); setMissionN(idxs.length); }
+          }
+          setChosen(st);
+          setLastChosen(st);
+          setScreen("final");
+        }
+      }
+    } catch (e) { /* 不正なリンクは無視して通常起動 */ }
+    sharedApplied.current = true;
+  }, [ready, stations]);
+
   // 保存
   const persist = (next) => { setStations(next); saveStations(next); };
   const setBaseAndSave = (id) => {
@@ -892,10 +916,15 @@ function App() {
     setHf({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, history: "prefer" });
     setHardWishes({}); setSoftWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setLastRecordedId(null); setMenuOpen(false); setSettingsOpen(false);
+    setMissionList(null); setMissionN(1);
     setScreen("home");
   };
   const goHome = () => { setMenuOpen(false); setSettingsOpen(false); setScreen("home"); };
   const navTo = (s) => { setMenuOpen(false); setSettingsOpen(false); setScreen(s); };
+
+  // ミッション（結果画面）：共有・復元のため App が保持
+  const [missionN, setMissionN] = useState(1);
+  const [missionList, setMissionList] = useState(null);
 
   // 共有：Web Share API →（非対応なら）クリップボードにコピー
   const [shareToast, setShareToast] = useState("");
@@ -906,18 +935,33 @@ function App() {
     shareToastTimer.current = setTimeout(() => setShareToast(""), 2800);
   };
   const appUrl = () => (typeof location !== "undefined" ? location.origin + location.pathname : "");
-  const doShare = async (text) => {
-    const url = appUrl();
-    const data = { title: "ドコイク？", text: text || "迷ったらこれ。今日のおでかけ先をおまかせで提案してくれるアプリ「ドコイク？」", url };
+  const shareWith = async (text, url) => {
+    const data = { title: "ドコイク？", text, url };
     try {
       if (typeof navigator !== "undefined" && navigator.share) { await navigator.share(data); return; }
     } catch (e) { if (e && e.name === "AbortError") return; /* それ以外はコピーへ */ }
     try {
-      await navigator.clipboard.writeText((data.text ? data.text + "\n" : "") + url);
+      await navigator.clipboard.writeText((text ? text + "\n" : "") + url);
       showShareToast("📋 リンクをコピーしました。友だちに送れます！");
     } catch (e) {
       showShareToast("コピーできませんでした。URL: " + url);
     }
+  };
+  // アプリの共有（トップページ）
+  const doShare = () => shareWith("迷ったらこれ。今日のおでかけ先をおまかせで提案してくれるアプリ「ドコイク？」", appUrl());
+  // 結果の共有：駅・出発駅・ミッションを URL(#) に埋め込み、開くと同じ結果画面を復元
+  const shareResult = () => {
+    if (!chosen) return;
+    const idxs = (missionList || []).map((m) => MISSIONS.indexOf(m)).filter((i) => i >= 0);
+    const parts = ["r=" + encodeURIComponent(chosen.id), "b=" + encodeURIComponent(base)];
+    if (idxs.length) parts.push("m=" + idxs.join(","));
+    const link = appUrl() + "#" + parts.join("&");
+    let text = `ドコイク？のおまかせで、今日は『${chosen.name}』に行くことに決まった！`;
+    if (missionList && missionList.length) {
+      text += "\n\n🎯 今日のミッション\n" + missionList.map((m) => "・" + m.t).join("\n");
+    }
+    text += "\n\nあなたも行き先に迷ったら👇";
+    shareWith(text, link);
   };
 
   // 【絶対条件フェーズ/STEP1】タップ：off ⇄ on（4以上に絞る）。選択中(on/top)ならoff。
@@ -955,6 +999,7 @@ function App() {
   const runReveal = (pool) => {
     if (!pool.length) return;
     const target = pickBy(pool, (s) => softWeight(s, softWishes));
+    setMissionList(null); setMissionN(1); // 新しい結果ではミッションをリセット
     setChosen(target);
     setLastChosen(target);
     setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
@@ -1284,14 +1329,14 @@ function App() {
             onRecorded={() => { recordVisit(chosen); setLastRecordedId(chosen.id); }}
           />
           <div style={{ height: 12 }} />
-          <Btn
-            kind="dark"
-            onClick={() => doShare(`ドコイク？のおまかせで、今日は『${chosen.name}』に行くことに決まった！\nあなたも行き先に迷ったら👇`)}
-          >
-            📤 この結果を友だちにシェア
+          <Btn kind="dark" onClick={shareResult}>
+            📤 この結果{missionList && missionList.length ? "＋ミッション" : ""}を友だちにシェア
           </Btn>
+          <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", margin: "8px 6px 0", lineHeight: 1.6 }}>
+            リンクを開くと、同じ駅{missionList && missionList.length ? "とミッション" : ""}の結果画面が表示されます。
+          </p>
           <div style={{ height: 22 }} />
-          <MissionBox />
+          <MissionBox n={missionN} onN={setMissionN} list={missionList} onGenerate={setMissionList} />
           <div style={{ height: 16 }} />
           <Btn kind="ghost" onClick={goHome}>🏠 ホームに戻る</Btn>
         </Fade>
