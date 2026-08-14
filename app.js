@@ -1446,8 +1446,9 @@ function VisitControl({ station, onRecorded, recorded }) {
   );
 }
 
-/* ココイッタの1行。editable のときだけ ＋1/−1 を表示（増減はアニメで見せる） */
-function VisitRow({ st, onAdd, onRemove, recorded, rank, editable }) {
+/* ココイッタの1行。editable のときだけ ＋1/−1 を表示（増減はアニメで見せる）。
+   onEdit を渡すと、行全体をタップで編集（登録＝検索）画面へ遷移できる */
+function VisitRow({ st, onAdd, onRemove, recorded, rank, editable, onEdit }) {
   const [pop, setPop] = useState(null); // "＋1" / "−1"
   const prev = useRef(st.visitCount);
   useEffect(() => {
@@ -1460,11 +1461,15 @@ function VisitRow({ st, onAdd, onRemove, recorded, rank, editable }) {
   }, [st.visitCount]);
   const up = pop === "＋1";
   return (
-    <div style={{ background: C.paperCard, border: `1px solid ${recorded ? C.signal : C.line}`, borderRadius: 14, padding: "12px 14px" }}>
+    <div
+      onClick={onEdit ? () => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onEdit(st); } : undefined}
+      style={{ background: C.paperCard, border: `1px solid ${recorded ? C.signal : C.line}`, borderRadius: 14, padding: "12px 14px", cursor: onEdit ? "pointer" : "default" }}
+    >
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         {rank != null && <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, fontWeight: 700, minWidth: 22 }}>#{rank}</div>}
         <div style={{ fontFamily: SANS, fontSize: 18, fontWeight: 800, color: C.ink }}>{st.name}</div>
         <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>{st.area}</div>
+        {onEdit && <div style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 12, color: C.signal, fontWeight: 700 }}>編集 ›</div>}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, position: "relative" }}>
         <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>行った回数：</span>
@@ -1731,12 +1736,15 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
 
   const inputStyle = { width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink };
 
+  // 登録・編集モーダルを開く（query を渡すとその駅を検索した状態で開く）
+  const openReg = (query = "") => { setRegOpen(true); setRegQ(query); };
+
   return (
     <Fade key="manage">
-      <StepHead n="—" title="ココイッタ" sub="行った場所の記録。回数が多い順にならびます。" />
+      <StepHead n="—" title="ココイッタ" sub="行った場所の記録。回数が多い順にならびます。一覧をタップすると回数を編集できます。" />
 
-      {/* ココイッタ登録ボタン → 小画面（モーダル）を開く */}
-      <Btn kind="primary" onClick={() => { setRegOpen(true); setRegQ(""); }}>
+      {/* ココイッタ登録ボタン → 駅を検索する状態でモーダルを開く */}
+      <Btn kind="primary" onClick={() => openReg("")}>
         ＋ ココイッタを登録
       </Btn>
 
@@ -1744,13 +1752,13 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
       {regOpen && (
         <div style={{ position: "fixed", inset: 0, background: C.paper, zIndex: 60, display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 12px", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>ココイッタを登録</div>
+            <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>ココイッタを登録・編集</div>
             <button onClick={() => setRegOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
           </div>
           <div style={{ padding: "12px 16px 6px" }}>
-            <input value={regQ} onChange={(e) => setRegQ(e.target.value)} placeholder="駅名でさがして登録（例：横浜）" style={inputStyle} />
+            <input autoFocus value={regQ} onChange={(e) => setRegQ(e.target.value)} placeholder="駅名でさがす（例：横浜）" style={inputStyle} />
             <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "10px 2px 2px" }}>
-              {regQ.trim() ? `「${regQ.trim()}」の検索結果` : (regResults.length ? "直前に選ばれた駅（新しい順）" : "まず「ドコイク？」で駅を決めると、ここに出ます")}
+              {regQ.trim() ? `「${regQ.trim()}」の検索結果（＋1／−1で回数を調整）` : (regResults.length ? "直前に選ばれた駅（新しい順）" : "駅名で検索するか、まず「ドコイク？」で駅を決めると、ここに出ます")}
             </div>
           </div>
           <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "8px 16px 28px" }}>
@@ -1793,7 +1801,7 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
           </p>
         )}
         {visitedList.map((st, i) => (
-          <VisitRow key={st.id} st={st} rank={sort === "count" ? i + 1 : null} />
+          <VisitRow key={st.id} st={st} rank={sort === "count" ? i + 1 : null} onEdit={(s) => openReg(s.name)} />
         ))}
       </div>
     </Fade>
