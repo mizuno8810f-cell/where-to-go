@@ -369,8 +369,8 @@ function Reveal({ names, targetName, onDone }) {
       if (!alive) return;
       setDisplay(pool[Math.floor(Math.random() * pool.length)]);
       elapsed += delay;
-      if (elapsed > 1300) delay += 26;            // だんだん減速
-      if (delay > 240 || elapsed > 2600) {         // 着地
+      if (elapsed > 2300) delay += 26;            // だんだん減速（+1秒ぶん長く回す）
+      if (delay > 240 || elapsed > 3600) {         // 着地
         setDisplay(targetName); setLocked(true);
         timer = setTimeout(() => alive && onDone(), 1000);
         return;
@@ -522,6 +522,7 @@ function App() {
   const [revealNames, setRevealNames] = useState([]);
   const [revealTarget, setRevealTarget] = useState("");
   const [lastRecordedId, setLastRecordedId] = useState(null); // 結果画面「ココイク」で+1済みの駅（重複+1防止）
+  const [lastChosen, setLastChosen] = useState(null); // 直前にメイン検索で選ばれた駅（ココイッタ登録の初期表示用・resetでは消さない）
 
   // 初期ロード（駅データ＋出発駅）
   useEffect(() => {
@@ -600,6 +601,7 @@ function App() {
     if (!pool.length) return;
     const target = pickWeighted(pool, wishes);
     setChosen(target);
+    setLastChosen(target);
     setRevealNames(pool.map((p) => p.name));
     setRevealTarget(target.name);
     setScreen("reveal");
@@ -826,7 +828,7 @@ function App() {
         <Manage
           stations={stations}
           onChange={persist}
-          chosen={chosen}
+          lastChosen={lastChosen}
           lastRecordedId={lastRecordedId}
           onClearRecorded={() => setLastRecordedId(null)}
         />
@@ -918,8 +920,8 @@ function VisitControl({ station, onRecorded, recorded }) {
   );
 }
 
-/* ココイッタ一覧の1行：回数の ＋1/−1 と、増減が見えるアニメ表示 */
-function VisitRow({ st, onAdd, onRemove, recorded, rank }) {
+/* ココイッタの1行。editable のときだけ ＋1/−1 を表示（増減はアニメで見せる） */
+function VisitRow({ st, onAdd, onRemove, recorded, rank, editable }) {
   const [pop, setPop] = useState(null); // "＋1" / "−1"
   const prev = useRef(st.visitCount);
   useEffect(() => {
@@ -951,15 +953,17 @@ function VisitRow({ st, onAdd, onRemove, recorded, rank }) {
         )}
         {st.lastVisit && <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted, marginLeft: 6 }}>（最終 {st.lastVisit}）</span>}
       </div>
-      {recorded && (
+      {editable && recorded && (
         <div style={{ fontFamily: SANS, fontSize: 11.5, color: C.signal, fontWeight: 700, marginTop: 6 }}>
           先ほどのココイクで＋1済み（重複登録を防止中）
         </div>
       )}
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <SmallBtn onClick={() => onAdd(st)} disabled={recorded}>＋1</SmallBtn>
-        <SmallBtn danger onClick={() => onRemove(st)} disabled={st.visitCount <= 0}>−1</SmallBtn>
-      </div>
+      {editable && (
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <SmallBtn onClick={() => onAdd(st)} disabled={recorded}>＋1</SmallBtn>
+          <SmallBtn danger onClick={() => onRemove(st)} disabled={st.visitCount <= 0}>−1</SmallBtn>
+        </div>
+      )}
     </div>
   );
 }
@@ -1040,9 +1044,9 @@ function BasePicker({ stations, baseId, onPick }) {
   );
 }
 
-function Manage({ stations, onChange, chosen, lastRecordedId, onClearRecorded }) {
-  const [mode, setMode] = useState("list");   // "list" | "register"
-  const [regQ, setRegQ] = useState("");         // 登録モードの検索
+function Manage({ stations, onChange, lastChosen, lastRecordedId, onClearRecorded }) {
+  const [regOpen, setRegOpen] = useState(false); // 登録モーダルの開閉
+  const [regQ, setRegQ] = useState("");         // 登録モーダルの検索
   const [q, setQ] = useState("");               // 一覧内の検索
   const [area, setArea] = useState("all");      // フィルタ（エリア）
   const [sort, setSort] = useState("count");    // 並び替え
@@ -1066,12 +1070,14 @@ function Manage({ stations, onChange, chosen, lastRecordedId, onClearRecorded })
     if (SH) { try { if (await SH.ready()) await SH.removeOneVisit(st.id); } catch (e) { /* ローカルのみ */ } }
   };
 
-  // 登録モードの候補：検索文字があれば全駅から、無ければ「直前に選ばれた駅」
+  // 登録モーダルの候補：検索文字があれば全駅から、無ければ「直前に選ばれた駅」
   const regResults = useMemo(() => {
     const query = regQ.trim();
     if (query) return stations.filter((s) => s.name.includes(query)).slice(0, 60);
-    return chosen ? stations.filter((s) => s.id === chosen.id) : [];
-  }, [stations, regQ, chosen]);
+    if (!lastChosen) return [];
+    const cur = stations.find((s) => s.id === lastChosen.id);
+    return cur ? [cur] : [lastChosen];
+  }, [stations, regQ, lastChosen]);
 
   // ココイッタ一覧（行った駅）：検索・フィルタ・ソート
   const visitedList = useMemo(() => {
@@ -1092,33 +1098,40 @@ function Manage({ stations, onChange, chosen, lastRecordedId, onClearRecorded })
     <Fade key="manage">
       <StepHead n="—" title="ココイッタ" sub="行った場所の記録。回数が多い順にならびます。" />
 
-      {/* ココイッタ登録ボタン */}
-      <Btn kind={mode === "register" ? "ghost" : "primary"} onClick={() => { setMode(mode === "register" ? "list" : "register"); setRegQ(""); }}>
-        {mode === "register" ? "登録をとじる" : "＋ ココイッタを登録"}
+      {/* ココイッタ登録ボタン → 小画面（モーダル）を開く */}
+      <Btn kind="primary" onClick={() => { setRegOpen(true); setRegQ(""); }}>
+        ＋ ココイッタを登録
       </Btn>
 
-      {mode === "register" && (
-        <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: 12, margin: "12px 0 6px" }}>
-          <input value={regQ} onChange={(e) => setRegQ(e.target.value)} placeholder="駅名でさがして登録（例：横浜）" style={inputStyle} />
-          <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "10px 2px 8px" }}>
-            {regQ.trim() ? `「${regQ.trim()}」の検索結果` : (chosen ? "直前に選ばれた駅" : "まず「ドコイク？」で駅を決めると、ここに出ます")}
-          </div>
-          <div style={{ display: "grid", gap: 10 }}>
-            {regResults.length === 0 && (
-              <p style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, textAlign: "center", padding: "12px 6px" }}>
-                {regQ.trim() ? "見つかりませんでした。" : "直前に選ばれた駅はありません。"}
-              </p>
-            )}
-            {regResults.map((st) => (
-              <VisitRow key={st.id} st={st} onAdd={addOne} onRemove={removeOne} recorded={lastRecordedId === st.id} />
-            ))}
+      {/* 登録モーダル（ここでだけ ＋1/−1 ができる） */}
+      {regOpen && (
+        <div style={modalWrap} onClick={() => setRegOpen(false)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ fontFamily: SANS, fontSize: 18, fontWeight: 800, color: C.ink }}>ココイッタを登録</div>
+              <button onClick={() => setRegOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+            </div>
+            <input value={regQ} onChange={(e) => setRegQ(e.target.value)} placeholder="駅名でさがして登録（例：横浜）" style={inputStyle} />
+            <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "10px 2px 8px" }}>
+              {regQ.trim() ? `「${regQ.trim()}」の検索結果` : (lastChosen ? "直前に選ばれた駅" : "まず「ドコイク？」で駅を決めると、ここに出ます")}
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {regResults.length === 0 && (
+                <p style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, textAlign: "center", padding: "12px 6px" }}>
+                  {regQ.trim() ? "見つかりませんでした。" : "直前に選ばれた駅はありません。"}
+                </p>
+              )}
+              {regResults.map((st) => (
+                <VisitRow key={st.id} st={st} onAdd={addOne} onRemove={removeOne} recorded={lastRecordedId === st.id} editable />
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       <div style={{ height: 18 }} />
 
-      {/* 一覧：検索・エリアフィルタ・並び替え */}
+      {/* 一覧（閲覧専用）：検索・エリアフィルタ・並び替え。増減は登録から */}
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="記録した駅から検索" style={inputStyle} />
       <div style={{ height: 12 }} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
@@ -1139,7 +1152,7 @@ function Manage({ stations, onChange, chosen, lastRecordedId, onClearRecorded })
           </p>
         )}
         {visitedList.map((st, i) => (
-          <VisitRow key={st.id} st={st} onAdd={addOne} onRemove={removeOne} recorded={lastRecordedId === st.id} rank={sort === "count" ? i + 1 : null} />
+          <VisitRow key={st.id} st={st} rank={sort === "count" ? i + 1 : null} />
         ))}
       </div>
     </Fade>
