@@ -356,21 +356,26 @@ function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude,
 function Reveal({ names, targetName, onDone }) {
   const [display, setDisplay] = useState(names[0] || targetName);
   const [locked, setLocked] = useState(false);
+  const [spin, setSpin] = useState(0); // ティックごとに増える（リールの落下モーション用）
   useEffect(() => {
-    const pool = names.length ? names : [targetName];
-    if (prefersReduce()) {
-      setDisplay(targetName); setLocked(true);
-      const t = setTimeout(onDone, 800);
-      return () => clearTimeout(t);
-    }
+    // 表示がしっかり切り替わるよう、重複を除いた候補プールを用意（最低2件）
+    let pool = Array.from(new Set((names && names.length ? names : [targetName])));
+    if (pool.length < 2) pool = pool.concat(["…", targetName]);
+    const reduce = prefersReduce();      // 視差軽減時も「止まる」のではなく、ゆっくり回す
     let alive = true, timer;
-    let elapsed = 0, delay = 55;
+    let elapsed = 0, delay = reduce ? 95 : 55;
     const tick = () => {
       if (!alive) return;
-      setDisplay(pool[Math.floor(Math.random() * pool.length)]);
+      // 直前と同じ名前は避けて必ず切り替わって見せる
+      setDisplay((cur) => {
+        let n = pool[Math.floor(Math.random() * pool.length)];
+        if (n === cur) n = pool[(pool.indexOf(cur) + 1) % pool.length];
+        return n;
+      });
+      setSpin((s) => s + 1);
       elapsed += delay;
-      if (elapsed > 2300) delay += 26;            // だんだん減速（+1秒ぶん長く回す）
-      if (delay > 240 || elapsed > 3600) {         // 着地
+      if (elapsed > 3600) delay += 26;             // 十分回してから減速
+      if (delay > 240 || elapsed > 5200) {          // 着地
         setDisplay(targetName); setLocked(true);
         timer = setTimeout(() => alive && onDone(), 1000);
         return;
@@ -391,18 +396,19 @@ function Reveal({ names, targetName, onDone }) {
           {locked ? "きまり！" : "抽選中"}
         </div>
         <div style={{ height: 24 }} />
-        <div
-          key={locked ? "lock" : "spin"}
-          style={{
-            fontFamily: SANS, fontWeight: 900, color: "#fff", letterSpacing: 1, lineHeight: 1.1,
-            fontSize: locked ? 54 : 40,
-            filter: locked ? "none" : "blur(.5px)",
-            opacity: locked ? 1 : 0.9,
-            animation: locked ? "pop .55s cubic-bezier(.2,.9,.2,1) both" : "none",
-            padding: "6px 4px",
-          }}
-        >
-          {display}
+        <div style={{ height: 64, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          <div
+            key={locked ? "lock" : "spin-" + spin}
+            className={locked ? "" : "reel"}
+            style={{
+              fontFamily: SANS, fontWeight: 900, color: "#fff", letterSpacing: 1, lineHeight: 1.1,
+              fontSize: locked ? 54 : 38,
+              animation: locked ? "pop .55s cubic-bezier(.2,.9,.2,1) both" : undefined,
+              padding: "2px 4px",
+            }}
+          >
+            {display}
+          </div>
         </div>
         <div style={{ height: 22 }} />
         {locked ? (
@@ -523,6 +529,7 @@ function App() {
   const [revealTarget, setRevealTarget] = useState("");
   const [lastRecordedId, setLastRecordedId] = useState(null); // 結果画面「ココイク」で+1済みの駅（重複+1防止）
   const [lastChosen, setLastChosen] = useState(null); // 直前にメイン検索で選ばれた駅（ココイッタ登録の初期表示用・resetでは消さない）
+  const [chosenHistory, setChosenHistory] = useState([]); // メイン検索で選ばれた駅の履歴（新しい順・重複なし）
 
   // 初期ロード（駅データ＋出発駅）
   useEffect(() => {
@@ -602,6 +609,7 @@ function App() {
     const target = pickWeighted(pool, wishes);
     setChosen(target);
     setLastChosen(target);
+    setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
     setRevealNames(pool.map((p) => p.name));
     setRevealTarget(target.name);
     setScreen("reveal");
@@ -828,7 +836,7 @@ function App() {
         <Manage
           stations={stations}
           onChange={persist}
-          lastChosen={lastChosen}
+          chosenHistory={chosenHistory}
           lastRecordedId={lastRecordedId}
           onClearRecorded={() => setLastRecordedId(null)}
         />
@@ -1044,7 +1052,7 @@ function BasePicker({ stations, baseId, onPick }) {
   );
 }
 
-function Manage({ stations, onChange, lastChosen, lastRecordedId, onClearRecorded }) {
+function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearRecorded }) {
   const [regOpen, setRegOpen] = useState(false); // 登録モーダルの開閉
   const [regQ, setRegQ] = useState("");         // 登録モーダルの検索
   const [q, setQ] = useState("");               // 一覧内の検索
@@ -1070,14 +1078,13 @@ function Manage({ stations, onChange, lastChosen, lastRecordedId, onClearRecorde
     if (SH) { try { if (await SH.ready()) await SH.removeOneVisit(st.id); } catch (e) { /* ローカルのみ */ } }
   };
 
-  // 登録モーダルの候補：検索文字があれば全駅から、無ければ「直前に選ばれた駅」
+  // 登録モーダルの候補：検索文字があれば全駅から、無ければ「直前に選ばれた駅（履歴すべて）」
   const regResults = useMemo(() => {
     const query = regQ.trim();
     if (query) return stations.filter((s) => s.name.includes(query)).slice(0, 60);
-    if (!lastChosen) return [];
-    const cur = stations.find((s) => s.id === lastChosen.id);
-    return cur ? [cur] : [lastChosen];
-  }, [stations, regQ, lastChosen]);
+    const hist = chosenHistory || [];
+    return hist.map((c) => stations.find((s) => s.id === c.id) || c);
+  }, [stations, regQ, chosenHistory]);
 
   // ココイッタ一覧（行った駅）：検索・フィルタ・ソート
   const visitedList = useMemo(() => {
@@ -1103,21 +1110,23 @@ function Manage({ stations, onChange, lastChosen, lastRecordedId, onClearRecorde
         ＋ ココイッタを登録
       </Btn>
 
-      {/* 登録モーダル（ここでだけ ＋1/−1 ができる） */}
+      {/* 登録モーダル：画面いっぱい。ここでだけ ＋1/−1 ができる */}
       {regOpen && (
-        <div style={modalWrap} onClick={() => setRegOpen(false)}>
-          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ fontFamily: SANS, fontSize: 18, fontWeight: 800, color: C.ink }}>ココイッタを登録</div>
-              <button onClick={() => setRegOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.muted }}>とじる ✕</button>
-            </div>
+        <div style={{ position: "fixed", inset: 0, background: C.paper, zIndex: 60, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 12px", borderBottom: `1px solid ${C.line}` }}>
+            <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>ココイッタを登録</div>
+            <button onClick={() => setRegOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+          </div>
+          <div style={{ padding: "12px 16px 6px" }}>
             <input value={regQ} onChange={(e) => setRegQ(e.target.value)} placeholder="駅名でさがして登録（例：横浜）" style={inputStyle} />
-            <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "10px 2px 8px" }}>
-              {regQ.trim() ? `「${regQ.trim()}」の検索結果` : (lastChosen ? "直前に選ばれた駅" : "まず「ドコイク？」で駅を決めると、ここに出ます")}
+            <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: "10px 2px 2px" }}>
+              {regQ.trim() ? `「${regQ.trim()}」の検索結果` : (regResults.length ? "直前に選ばれた駅（新しい順）" : "まず「ドコイク？」で駅を決めると、ここに出ます")}
             </div>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "8px 16px 28px" }}>
             <div style={{ display: "grid", gap: 10 }}>
               {regResults.length === 0 && (
-                <p style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, textAlign: "center", padding: "12px 6px" }}>
+                <p style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, textAlign: "center", padding: "16px 6px" }}>
                   {regQ.trim() ? "見つかりませんでした。" : "直前に選ばれた駅はありません。"}
                 </p>
               )}
