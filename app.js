@@ -159,6 +159,19 @@ function sampleWeighted(pool, wishes, n) {
 const prefersReduce = () =>
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/* Cookie ヘルパー（出発駅などの保存用） */
+function getCookie(name) {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1") + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function setCookie(name, value, days) {
+  if (typeof document === "undefined") return;
+  const exp = new Date(Date.now() + (days || 365) * 864e5).toUTCString();
+  document.cookie = name + "=" + encodeURIComponent(value) + "; expires=" + exp + "; path=/; SameSite=Lax";
+}
+const BASE_COOKIE = "dokoiku_base";
+
 // 出発駅からの所要時間（隣接グラフのダイクストラ・概算／乗換ペナルティなし）
 function shortestTimes(sourceId) {
   const dist = { [sourceId]: 0 };
@@ -537,7 +550,10 @@ function App() {
       const saved = await loadStations();
       if (saved && Array.isArray(saved) && saved.length) setStations(saved);
       try {
-        if (typeof window !== "undefined" && window.storage) {
+        // 出発駅は Cookie から復元（無ければ旧 window.storage → 既定）
+        const c = getCookie(BASE_COOKIE);
+        if (c) setBase(c);
+        else if (typeof window !== "undefined" && window.storage) {
           const b = await window.storage.get("wheretogo:base:v1");
           if (b && b.value) setBase(b.value);
         }
@@ -561,6 +577,7 @@ function App() {
   const persist = (next) => { setStations(next); saveStations(next); };
   const setBaseAndSave = (id) => {
     setBase(id);
+    setCookie(BASE_COOKIE, id, 365); // 出発駅を Cookie に保存（1年）
     try { if (typeof window !== "undefined" && window.storage) window.storage.set("wheretogo:base:v1", id); } catch (e) { /* noop */ }
   };
 
