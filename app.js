@@ -386,11 +386,13 @@ function Reveal({ names, targetName, onDone }) {
         return n;
       });
       setSpin((s) => s + 1);
+      if (typeof window !== "undefined" && window.Sfx) window.Sfx.tick(); // 回転のカチカチ音
       elapsed += delay;
-      if (elapsed > 3600) delay += 26;             // 十分回してから減速
-      if (delay > 240 || elapsed > 5200) {          // 着地
+      if (elapsed > 1900) delay += 26;             // 少し回してから減速（短め）
+      if (delay > 240 || elapsed > 3200) {          // 着地
         setDisplay(targetName); setLocked(true);
-        timer = setTimeout(() => alive && onDone(), 1000);
+        if (typeof window !== "undefined" && window.Sfx) window.Sfx.win(); // きまり！の音
+        timer = setTimeout(() => alive && onDone(), 650);
         return;
       }
       timer = setTimeout(tick, delay);
@@ -511,7 +513,8 @@ function Btn({ onClick, children, kind = "primary", disabled }) {
   }[kind];
   return (
     <button
-      onClick={onClick} disabled={disabled}
+      onClick={(e) => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } if (onClick) onClick(e); }}
+      disabled={disabled}
       style={{
         width: "100%", padding: "16px", borderRadius: 14, cursor: disabled ? "not-allowed" : "pointer",
         background: styles.bg, color: styles.fg, border: `1.5px solid ${styles.bd}`,
@@ -658,11 +661,14 @@ function App() {
         <button onClick={resetFlow} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
           <Logo size={28} />
         </button>
-        {screen !== "manage" ? (
-          <button onClick={() => setScreen("manage")} style={miniLink}>ココイッタ</button>
-        ) : (
-          <button onClick={resetFlow} style={miniLink}>戻る</button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <SoundToggle />
+          {screen !== "manage" ? (
+            <button onClick={() => setScreen("manage")} style={miniLink}>ココイッタ</button>
+          ) : (
+            <button onClick={resetFlow} style={miniLink}>戻る</button>
+          )}
+        </div>
       </div>
       )}
 
@@ -904,6 +910,7 @@ function VisitControl({ station, onRecorded, recorded }) {
         await SH.addVisit(station.id);
         setCount((c) => (c == null ? 1 : c + 1)); // 表示回数を即時+1
         if (onRecorded) onRecorded();
+        if (typeof window !== "undefined" && window.Sfx) window.Sfx.win();
         setToast("ココイク！ 記録しました（＋1）");
       } else {
         if (onRecorded) onRecorded();  // ローカルのみ更新
@@ -985,8 +992,8 @@ function VisitRow({ st, onAdd, onRemove, recorded, rank, editable }) {
       )}
       {editable && (
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <SmallBtn onClick={() => onAdd(st)} disabled={recorded}>＋1</SmallBtn>
-          <SmallBtn danger onClick={() => onRemove(st)} disabled={st.visitCount <= 0}>−1</SmallBtn>
+          <SmallBtn onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.plus(); } onAdd(st); }} disabled={recorded}>＋1</SmallBtn>
+          <SmallBtn danger onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.minus(); } onRemove(st); }} disabled={st.visitCount <= 0}>−1</SmallBtn>
         </div>
       )}
     </div>
@@ -1018,6 +1025,25 @@ function StepHead({ n, title, sub }) {
       <h2 style={{ fontFamily: SANS, fontSize: 26, fontWeight: 900, color: C.ink, margin: "4px 0 4px" }}>{title}</h2>
       {sub && <p style={{ fontFamily: SANS, fontSize: 14, color: C.inkSoft, margin: 0 }}>{sub}</p>}
     </div>
+  );
+}
+function SoundToggle() {
+  const [on, setOn] = useState(typeof window !== "undefined" && window.Sfx ? window.Sfx.enabled : true);
+  return (
+    <button
+      aria-label={on ? "音オン" : "音オフ"}
+      onClick={() => {
+        if (typeof window !== "undefined" && window.Sfx) {
+          window.Sfx.unlock();
+          const v = window.Sfx.toggle();
+          setOn(v);
+          if (v) window.Sfx.tap();
+        } else { setOn(!on); }
+      }}
+      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "4px 4px" }}
+    >
+      {on ? "🔊" : "🔇"}
+    </button>
   );
 }
 const miniLink = {
