@@ -111,24 +111,28 @@ function applyHard(list, hf, timeMap, wishes) {
     }
     if (hf.history === "unvisited" && st.visited) return false;
     if (hf.history === "excludeRecent" && isRecent(st)) return false;
-    // ★最優先（長押し=top）だけをハード絞り込み：その気分が 5 の駅のみ残す。
-    // 通常のタップ(on)は絞り込まず、抽選の重み付け（当たりやすさ）に使う。
+    // 絶対条件フェーズの気分＝絞り込み：on は 4以上、top（長押し=最優先）は 5 のみ。
     for (const k of wishKeys) {
-      if (wishes[k] === "top" && (st.scores[k] || 0) < 5) return false;
+      const need = wishes[k] === "top" ? 5 : 4;
+      if ((st.scores[k] || 0) < need) return false;
     }
     return true;
   });
 }
 
-// 希望条件（dateScores）: 除外せず抽選確率だけ上げる重み付け
-// 選択キーの平均スコア(1..5)を 1.9^(avg-3) に変換（3で等倍、5で約3.6倍、1で約0.28倍）
+// 任意条件フェーズ: 除外せず抽選確率だけ極端に上げる重み付け
+// 平均スコア(1..5)を 3.2^(avg-3) に変換（3で等倍、5で約10倍、4で約3.2倍、1で約0.1倍）
+function wishKeysOf(wishes) {
+  if (!wishes) return [];
+  return Array.isArray(wishes) ? wishes : Object.keys(wishes);
+}
 function weightOf(st, wishes) {
-  const keys = wishes ? Object.keys(wishes) : [];
+  const keys = wishKeysOf(wishes);
   if (!keys.length) return 1;
   let sum = 0;
   keys.forEach((k) => { sum += st.scores[k] || 3; });
   const avg = sum / keys.length;
-  return Math.pow(1.9, avg - 3);
+  return Math.pow(3.2, avg - 3);
 }
 function pickWeighted(pool, wishes) {
   if (!pool.length) return null;
@@ -150,7 +154,7 @@ function sample(pool, n) {
 }
 // 希望条件の重みでランダムに n 件（重複なし）。希望なしなら均等。
 function sampleWeighted(pool, wishes, n) {
-  if (!wishes || !Object.keys(wishes).length) return sample(pool, n);
+  if (!wishKeysOf(wishes).length) return sample(pool, n);
   const items = [...pool];
   const out = [];
   while (out.length < n && items.length) {
@@ -358,6 +362,25 @@ function WishPicker({ wishes, onToggle, onTop }) {
           <Row>
             {g.items.map(([k, label]) => (
               <WishChip key={k} label={label} state={wishes[k]} onToggle={() => onToggle(k)} onTop={() => onTop(k)} />
+            ))}
+          </Row>
+        </div>
+      ))}
+    </>
+  );
+}
+/* 任意条件フェーズ用：タップのみの重み付けピッカー（絞り込みなし） */
+function SoftWishPicker({ selected, onToggle }) {
+  return (
+    <>
+      {WISH_GROUPS.map((g) => (
+        <div key={g.title}>
+          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, margin: "12px 0 8px" }}>
+            {g.title}
+          </div>
+          <Row>
+            {g.items.map(([k, label]) => (
+              <Chip key={k} active={selected.includes(k)} onClick={() => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onToggle(k); }}>{label}</Chip>
             ))}
           </Row>
         </div>
@@ -611,7 +634,14 @@ function App() {
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
   const [hf, setHf] = useState({ priority: "standard", timeOn: false, timeMin: 0, timeMax: 60, history: null });
   const [base, setBase] = useState(BASE_DEFAULT);
-  const [wishes, setWishes] = useState({}); // { key: "on"(4以上) | "top"(5のみ・最優先) }
+  const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
+  const [softWishes, setSoftWishes] = useState([]); // 任意条件フェーズ(STEP3)：重み付けのみ [key,...]
+  // 結果表示（相性タグ）用に両方を合成
+  const shownWishes = useMemo(() => {
+    const m = { ...hardWishes };
+    softWishes.forEach((k) => { if (!m[k]) m[k] = "on"; });
+    return m;
+  }, [hardWishes, softWishes]);
   const [shown, setShown] = useState([]);
   const [excluded, setExcluded] = useState([]);
   const [chosen, setChosen] = useState(null);
@@ -670,33 +700,35 @@ function App() {
     return t == null ? "経路なし" : `約${t}分`;
   };
 
-  const candidates = useMemo(() => applyHard(stations, hf, timeMap, wishes), [stations, hf, timeMap, wishes]);
+  const candidates = useMemo(() => applyHard(stations, hf, timeMap, hardWishes), [stations, hf, timeMap, hardWishes]);
   const count = candidates.length;
 
   const resetFlow = () => {
     setHf({ priority: "standard", time: null, history: null });
-    setWishes({}); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
+    setHardWishes({}); setSoftWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setLastRecordedId(null);
     setScreen("home");
   };
 
-  // タップ：off ⇄ on（4以上に絞る）。既に選択中(on/top)ならoff。
-  const toggleWish = (k) => setWishes((cur) => {
+  // 【絶対条件フェーズ/STEP1】タップ：off ⇄ on（4以上に絞る）。選択中(on/top)ならoff。
+  const toggleHardWish = (k) => setHardWishes((cur) => {
     const next = { ...cur };
     if (next[k]) delete next[k]; else next[k] = "on";
     return next;
   });
-  // 長押し：最優先(top＝5のみ)に。既にtopならoffに戻す。
-  const topWish = (k) => setWishes((cur) => {
+  // 【絶対条件フェーズ/STEP1】長押し：最優先(top＝5のみ)。既にtopならoff。
+  const topHardWish = (k) => setHardWishes((cur) => {
     const next = { ...cur };
     if (next[k] === "top") delete next[k]; else next[k] = "top";
     return next;
   });
+  // 【任意条件フェーズ/STEP3】タップのみ：重み付け用に選択/解除。
+  const toggleSoftWish = (k) => setSoftWishes((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
   const toggleExclude = (st) => setExcluded((cur) => (cur.includes(st.id) ? cur.filter((x) => x !== st.id) : [...cur, st.id]));
 
   // ① 絶対条件で候補を出す → ② 今日の気分を反映して10件を表示
   const search10 = () => {
-    setShown(sampleWeighted(candidates, wishes, 10));
+    setShown(sampleWeighted(candidates, softWishes, 10));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
 
@@ -705,14 +737,14 @@ function App() {
 
   const reroll = () => {
     if (rerollUsed) return;
-    setShown(sampleWeighted(candidates, wishes, 10));
+    setShown(sampleWeighted(candidates, softWishes, 10));
     setExcluded([]); setChosen(null); setRerollUsed(true); setScreen("pick10");
   };
 
   // 1件を選び、抽選演出へ（希望条件があれば重み付き）
   const runReveal = (pool) => {
     if (!pool.length) return;
-    const target = pickWeighted(pool, wishes);
+    const target = pickWeighted(pool, softWishes);
     setChosen(target);
     setLastChosen(target);
     setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
@@ -841,10 +873,11 @@ function App() {
 
           <FieldLabel eyebrow="MOOD" title="今日の気分（任意）" />
           <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "-4px 0 2px", lineHeight: 1.6 }}>
-            <b>タップ</b>＝その気分に合う場所が<b>当たりやすくなります</b>（候補は減りません）。<br />
-            <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、その気分が<b>5点（最高）の駅だけに絞り込みます</b>（候補が減ります）。
+            <b>タップ</b>＝その気分が<b>4以上</b>の駅だけに<b>絞り込みます</b>。<br />
+            <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、<b>5点（最高）</b>の駅だけにさらに絞り込みます。<br />
+            <span style={{ color: C.muted }}>（この段階は絞り込み。複数選ぶと候補が減ります）</span>
           </p>
-          <WishPicker wishes={wishes} onToggle={toggleWish} onTop={topWish} />
+          <WishPicker wishes={hardWishes} onToggle={toggleHardWish} onTop={topHardWish} />
 
           <div style={{ height: 26 }} />
           <Btn onClick={search10} disabled={count === 0}>この条件で候補を出す →</Btn>
@@ -906,10 +939,10 @@ function App() {
         const pool = candidates.filter((s) => !excluded.includes(s.id));
         return (
         <Fade key="step3">
-          <StepHead n="03" title="今日の気分は？" sub="タップ＝当たりやすくなる／長押し＝★最優先(5のみに絞る)。STEP1の条件も反映済み。" />
-          <Board count={pool.length} note={pool.length === 0 ? "しぼりすぎかも" : "★最優先だけ候補が絞られます"} />
+          <StepHead n="03" title="今日の気分は？" sub="ここは絞り込みません。選ぶほど、その気分に合う駅が強く当たりやすくなります。" />
+          <Board count={pool.length} note="候補は減りません。当たりやすさが大きく変わります。" />
           <div style={{ height: 4 }} />
-          <WishPicker wishes={wishes} onToggle={toggleWish} onTop={topWish} />
+          <SoftWishPicker selected={softWishes} onToggle={toggleSoftWish} />
           <div style={{ height: 18 }} />
           <Btn onClick={decideWithWishes} disabled={pool.length === 0}>🎲 この気分で1つ決める！</Btn>
           {pool.length === 0 && (
@@ -928,7 +961,7 @@ function App() {
       {screen === "final" && chosen && (
         <Fade key="final">
           <div className="reveal">
-            <Ticket st={chosen} timeText={timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
+            <Ticket st={chosen} timeText={timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={shownWishes} />
           </div>
           <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", margin: "10px 6px 0", lineHeight: 1.6 }}>
             ※所要時間は概算です（乗換・待ち時間は含みません）。実際の経路・所要時間・営業状況はご自身でお確かめください。
