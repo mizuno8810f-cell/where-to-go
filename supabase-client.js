@@ -57,6 +57,38 @@
         if (res.error) throw res.error;
         return res.data || [];
       },
+
+      // 全訪問を集計して { station_id: { count, lastVisit(YYYY-MM-DD) } } を返す
+      // 起動時に各駅の訪問回数を復元するために使う
+      getCountsSummary: async function () {
+        if (!state.enabled) return {};
+        var res = await state.client
+          .from("station_visits")
+          .select("station_id, visited_at")
+          .eq("user_id", state.userId);
+        if (res.error) throw res.error;
+        var m = {};
+        (res.data || []).forEach(function (r) {
+          var e = m[r.station_id] || { count: 0, lastVisit: null };
+          e.count += 1;
+          var d = r.visited_at ? String(r.visited_at).slice(0, 10) : null;
+          if (d && (!e.lastVisit || d > e.lastVisit)) e.lastVisit = d;
+          m[r.station_id] = e;
+        });
+        return m;
+      },
+
+      // その駅の「自分の」履歴をすべて削除（記録をリセット用）
+      deleteVisits: async function (stationId) {
+        if (!state.enabled) throw new Error("supabase-disabled");
+        var res = await state.client
+          .from("station_visits")
+          .delete()
+          .eq("user_id", state.userId)
+          .eq("station_id", stationId);
+        if (res.error) throw res.error;
+        return true;
+      },
     };
   }
 

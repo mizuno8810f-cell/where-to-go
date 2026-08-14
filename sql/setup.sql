@@ -23,9 +23,10 @@ create index if not exists station_visits_user_time_idx
 -- 2) RLS を有効化
 alter table public.station_visits enable row level security;
 
--- 3) ポリシー（自分の行だけ SELECT / INSERT。UPDATE/DELETE は誰にも許可しない）
+-- 3) ポリシー（自分の行だけ SELECT / INSERT / DELETE。UPDATE は誰にも許可しない）
 drop policy if exists "select own visits"  on public.station_visits;
 drop policy if exists "insert own visits"  on public.station_visits;
+drop policy if exists "delete own visits"  on public.station_visits;
 
 -- 自分(user_id = auth.uid())の行だけ参照可
 create policy "select own visits"
@@ -41,6 +42,13 @@ create policy "insert own visits"
   to authenticated
   with check (auth.uid() = user_id);
 
--- UPDATE / DELETE ポリシーは作らない
---   → RLS 有効下でポリシー未定義の操作は全拒否になるため、
---     誰も（自分自身も）更新・削除できません（履歴の改ざん防止）。
+-- 自分の行だけ削除可（「記録をリセット」用）。他人の行は削除不可。
+create policy "delete own visits"
+  on public.station_visits
+  for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- UPDATE ポリシーは作らない
+--   → RLS 有効下でポリシー未定義の操作は全拒否。
+--     既存レコードの改ざん（日時・駅の書き換え）は誰にもできません。

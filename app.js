@@ -534,6 +534,18 @@ function App() {
         }
       } catch (e) { /* 既定の出発駅 */ }
       setReady(true);
+
+      // クラウド（Supabase）から訪問回数を復元。設定時のみ／失敗しても表示は維持。
+      try {
+        const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+        if (SH && (await SH.ready())) {
+          const summary = await SH.getCountsSummary();
+          setStations((cur) => cur.map((s) => {
+            const e = summary[s.id];
+            return e ? { ...s, visited: true, visitCount: e.count, lastVisit: e.lastVisit } : s;
+          }));
+        }
+      } catch (e) { /* クラウド未設定/失敗時はローカル表示のまま */ }
     })();
   }, []);
   // 保存
@@ -1005,10 +1017,21 @@ function Manage({ stations, onChange }) {
     return stations.filter((s) => s.visited).slice(0, 60);
   }, [stations, q]);
   const prBadge = (pr) => (pr === 1 ? "王道" : pr === 2 ? "穴場" : "その他");
-  const quickVisit = (st) => onChange(stations.map((x) => x.id === st.id
-    ? { ...x, visited: true, visitCount: x.visitCount + 1, lastVisit: new Date().toISOString().slice(0, 10) } : x));
-  const resetVisit = (st) => onChange(stations.map((x) => x.id === st.id
-    ? { ...x, visited: false, visitCount: 0, lastVisit: null } : x));
+  const today = new Date().toISOString().slice(0, 10);
+  // 「行った+1」：ローカルを即時更新しつつ、Supabaseにも1レコード追加（クラウド保存）
+  const quickVisit = async (st) => {
+    onChange(stations.map((x) => x.id === st.id
+      ? { ...x, visited: true, visitCount: x.visitCount + 1, lastVisit: today } : x));
+    const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+    if (SH) { try { if (await SH.ready()) await SH.addVisit(st.id); } catch (e) { /* 保存失敗時はローカルのみ */ } }
+  };
+  // 「記録をリセット」：ローカルを消しつつ、Supabaseのその駅の履歴も削除
+  const resetVisit = async (st) => {
+    onChange(stations.map((x) => x.id === st.id
+      ? { ...x, visited: false, visitCount: 0, lastVisit: null } : x));
+    const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+    if (SH) { try { if (await SH.ready()) await SH.deleteVisits(st.id); } catch (e) { /* 削除失敗時はローカルのみ */ } }
+  };
 
   return (
     <Fade key="manage">
