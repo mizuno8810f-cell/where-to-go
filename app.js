@@ -1035,6 +1035,7 @@ function App() {
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <HomeIconBtn onClick={goHome} />
+            <ShareIconBtn onClick={doShare} />
             <button
               aria-label="メニュー"
               onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setMenuOpen(true); }}
@@ -1068,12 +1069,6 @@ function App() {
               icon="📍" title="ココイッタ登録"
               desc="行った場所を記録して、回数を管理します。"
               onClick={() => { setMenuOpen(false); setScreen("manage"); }}
-            />
-            <div style={{ height: 10 }} />
-            <MenuItem
-              icon="📤" title="アプリをシェア"
-              desc="「ドコイク？」を友だちにおすすめできます。"
-              onClick={() => { setMenuOpen(false); doShare(); }}
             />
           </div>
         </div>
@@ -1564,6 +1559,26 @@ function HomeIconBtn({ onClick }) {
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.signal} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 11.5 12 4l9 7.5" /><path d="M5 10v9h5v-5h4v5h5v-9" />
+      </svg>
+    </button>
+  );
+}
+
+/* シェアアイコン（アプリを共有） */
+function ShareIconBtn({ onClick }) {
+  return (
+    <button
+      aria-label="アプリをシェア"
+      onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } onClick(); }}
+      style={{
+        width: 40, height: 40, borderRadius: 12, border: `1.5px solid ${C.line}`,
+        background: C.paperCard, cursor: "pointer", display: "flex", alignItems: "center",
+        justifyContent: "center", padding: 0,
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.signal} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="18" cy="5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="19" r="2.6" />
+        <path d="M8.3 10.7 15.7 6.3" /><path d="M8.3 13.3 15.7 17.7" />
       </svg>
     </button>
   );
