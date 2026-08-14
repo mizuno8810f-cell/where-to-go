@@ -860,6 +860,11 @@ function App() {
       } catch (e) { /* クラウド未設定/失敗時はローカル表示のまま */ }
     })();
   }, []);
+  // 画面が切り替わったら必ず一番上から表示する（前の画面のスクロール位置を引き継がない）
+  useEffect(() => {
+    if (typeof window !== "undefined") window.scrollTo(0, 0);
+  }, [screen]);
+
   // 保存
   const persist = (next) => { setStations(next); saveStations(next); };
   const setBaseAndSave = (id) => {
