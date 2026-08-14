@@ -1098,13 +1098,7 @@ function App() {
             <Chip active={hf.history === "prefer"} onClick={() => setHf({ ...hf, history: "prefer" })}>行ってない場所を優先</Chip>
             <Chip active={hf.history === "only"} onClick={() => setHf({ ...hf, history: "only" })}>行ってない場所だけ</Chip>
           </Row>
-          <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: "-8px 0 18px", lineHeight: 1.6 }}>
-            {hf.history === "prefer"
-              ? "「優先」＝行った回数が多いほど当たりにくくします（候補は減りません）。"
-              : hf.history === "only"
-              ? "「行ってない場所だけ」＝一度でも行った場所は候補から外します。"
-              : "「行った場所もOK」＝履歴を気にせず選びます。"}
-          </p>
+          <div style={{ height: 18 }} />
 
           {/* その他の絶対条件（旧・今日の気分）：折りたたみ */}
           <button
@@ -1126,9 +1120,8 @@ function App() {
           {moodOpen && (
             <div className="fade">
               <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "4px 0 2px", lineHeight: 1.6 }}>
-                <b>タップ</b>＝その条件が<b>4以上</b>の駅だけに<b>絞り込みます</b>。<br />
-                <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、<b>5点（最高）</b>の駅だけにさらに絞り込みます。<br />
-                <span style={{ color: C.muted }}>（この段階は絞り込み。複数選ぶと候補が減ります）</span>
+                <b>タップ</b>＝その条件が<b>しっかり当てはまる</b>駅だけに<b>絞り込みます</b>。<br />
+                <b>長押し</b>＝<b style={{ color: C.amber }}>★最優先</b>になり、その条件が<b>いちばん当てはまる</b>駅だけにさらに絞り込みます。
               </p>
               <WishPicker wishes={hardWishes} onToggle={toggleHardWish} onTop={topHardWish} />
             </div>
