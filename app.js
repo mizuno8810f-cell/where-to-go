@@ -830,9 +830,9 @@ function App() {
           <div className="reveal">
             <Ticket st={chosen} timeText={hf.time || timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={wishes} />
           </div>
-          {chosen.hotpepperUrl && (
+          {(
             <a
-              href={chosen.hotpepperUrl}
+              href={chosen.hotpepperUrl || "https://www.hotpepper.jp"}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } }}
@@ -1276,7 +1276,7 @@ async function boot() {
       pr: s.searchPriority,
       dateFeature: s.dateFeature,
       scores: s.scores,
-      hotpepperUrl: s.hotpepperUrl || null,
+      hotpepperUrl: (s.hotpepperUrl && String(s.hotpepperUrl).indexOf("http") === 0) ? s.hotpepperUrl : "https://www.hotpepper.jp",
       visited: false,
       lastVisit: null,
       visitCount: 0,
