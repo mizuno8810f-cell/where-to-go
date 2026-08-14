@@ -9,8 +9,14 @@
   "use strict";
 
   var cfg = (typeof window !== "undefined" && window.__SUPABASE__) || {};
-  // URL末尾のスラッシュ・空白・誤って付いたパスを除去（"Invalid path" 対策）
-  var url = cfg.url ? String(cfg.url).trim().replace(/\/+$/, "") : "";
+  // URLは「オリジン(https://xxx.supabase.co)」だけに補正する。
+  // 末尾スラッシュや /rest/v1 等のパスが混ざっていても自動で除去（"Invalid path" 対策）。
+  var rawUrl = cfg.url ? String(cfg.url).trim() : "";
+  var url = "";
+  if (rawUrl) {
+    try { url = new URL(rawUrl).origin; }
+    catch (e) { url = rawUrl.replace(/\/+$/, ""); }
+  }
   var anonKey = cfg.anonKey ? String(cfg.anonKey).trim() : "";
   var configured =
     !!url && !!anonKey &&
