@@ -799,6 +799,87 @@ function MissionBox({ n, onN, list, onGenerate }) {
   );
 }
 
+/* 集計画面（隠しURL #stats）：主要数値の表示＋リロード */
+function StatsScreen() {
+  const [data, setData] = useState(null);
+  const [status, setStatus] = useState("loading"); // loading | ok | error | disabled
+  const [err, setErr] = useState("");
+  const [updated, setUpdated] = useState(null);
+
+  const load = async () => {
+    setStatus("loading"); setErr("");
+    const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+    if (!SH) { setStatus("disabled"); setErr("Supabase未接続"); return; }
+    try {
+      const ok = await SH.ready();
+      if (!ok) { setStatus("disabled"); setErr(SH.lastError || "Supabase未接続"); return; }
+      const d = await SH.getStats();
+      setData(d); setUpdated(new Date()); setStatus("ok");
+    } catch (e) {
+      setErr((e && e.message) || String(e)); setStatus("error");
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const num = (v) => (v == null ? "—" : Number(v).toLocaleString("ja-JP"));
+  const cards = data ? [
+    { k: "総アクセス数 (PV)", v: data.page_views, hint: "アプリを開いた延べ回数" },
+    { k: "ユニーク人数", v: data.unique_users, hint: "PVを出した端末数（目安）" },
+    { k: "直近7日のPV", v: data.pv_last_7d, hint: "ここ7日間のアクセス" },
+    { k: "開いた端末数", v: data.total_users, hint: "匿名ユーザーの総数" },
+    { k: "ココイク総数", v: data.total_checkins, hint: "「行った」記録の合計" },
+    { k: "ココイクした人数", v: data.users_who_checked_in, hint: "記録した端末数" },
+  ] : [];
+
+  return (
+    <Fade key="stats">
+      <StepHead n="—" title="統計" sub="このページは隠しURL（#stats）です。数値は合計のみで、個人情報は含みません。" />
+
+      <Btn onClick={load} disabled={status === "loading"}>
+        {status === "loading" ? "読み込み中…" : "🔄 最新の数値に更新"}
+      </Btn>
+      {updated && (
+        <p style={{ fontFamily: MONO, fontSize: 12, color: C.muted, textAlign: "center", margin: "10px 0 0" }}>
+          最終更新 {updated.toLocaleString("ja-JP")}
+        </p>
+      )}
+      <div style={{ height: 18 }} />
+
+      {status === "ok" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {cards.map((c) => (
+            <div key={c.k} style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 16, padding: "16px 14px" }}>
+              <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, fontWeight: 700 }}>{c.k}</div>
+              <div style={{ fontFamily: MONO, fontSize: 34, fontWeight: 800, color: C.ink, margin: "4px 0 2px", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
+                {num(c.v)}
+              </div>
+              <div style={{ fontFamily: SANS, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>{c.hint}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {status === "loading" && !data && (
+        <div style={{ textAlign: "center", padding: 40, fontFamily: MONO, color: C.muted }}>読み込み中…</div>
+      )}
+
+      {(status === "error" || status === "disabled") && (
+        <div style={{ background: C.paperCard, border: `1.5px solid ${C.danger}`, borderRadius: 16, padding: 18 }}>
+          <div style={{ fontFamily: SANS, fontSize: 15, fontWeight: 800, color: C.danger, marginBottom: 6 }}>
+            {status === "disabled" ? "Supabaseに接続できません" : "集計の取得に失敗しました"}
+          </div>
+          <p style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, margin: "0 0 8px", lineHeight: 1.6 }}>
+            {String(err).indexOf("get_app_stats") >= 0 || String(err).indexOf("function") >= 0 || String(err).indexOf("does not exist") >= 0
+              ? "集計関数 get_app_stats がまだ作成されていない可能性があります。sql/analytics.sql の関数SQLを Supabase の SQL Editor で実行してください。"
+              : "しばらくしてからもう一度お試しください。"}
+          </p>
+          <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted, wordBreak: "break-all" }}>{err}</div>
+        </div>
+      )}
+    </Fade>
+  );
+}
+
 /* ============================================================
    メイン
    ============================================================ */
@@ -869,6 +950,12 @@ function App() {
     if (!ready || sharedApplied.current) return;
     try {
       const h = (typeof location !== "undefined" && location.hash) || "";
+      // 隠しURL：#stats → 集計画面
+      if (h.replace(/^#/, "").split(/[?&]/)[0] === STATS_HASH) {
+        setScreen("stats");
+        sharedApplied.current = true;
+        return;
+      }
       const rm = h.match(/[#&]r=([^&]+)/);
       if (rm) {
         const st = stations.find((s) => s.id === decodeURIComponent(rm[1]));
@@ -919,7 +1006,11 @@ function App() {
     setMissionList(null); setMissionN(1);
     setScreen("home");
   };
-  const goHome = () => { setMenuOpen(false); setSettingsOpen(false); setScreen("home"); };
+  const goHome = () => {
+    setMenuOpen(false); setSettingsOpen(false);
+    try { if (typeof history !== "undefined" && history.replaceState && location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* noop */ }
+    setScreen("home");
+  };
   const navTo = (s) => { setMenuOpen(false); setSettingsOpen(false); setScreen(s); };
 
   // ミッション（結果画面）：共有・復元のため App が保持
@@ -1347,6 +1438,8 @@ function App() {
         />
       )}
 
+      {screen === "stats" && <StatsScreen />}
+
       {/* 共有時のフィードバック（コピー時など） */}
       {shareToast && (
         <div style={{
@@ -1589,6 +1682,9 @@ function ShareIconBtn({ onClick }) {
   );
 }
 
+/* 隠しURL：#stats で集計画面を開く（変更したい場合はこの文字列を差し替え） */
+const STATS_HASH = "stats";
+
 /* パンくずリスト（途中の項目をタップでその画面へ戻れる） */
 const CRUMBS = {
   home: [["ホーム", "home"]],
@@ -1598,6 +1694,7 @@ const CRUMBS = {
   reveal: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["結果", "final"]],
   final: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["結果", "final"]],
   manage: [["ホーム", "home"], ["ココイッタ", "manage"]],
+  stats: [["ホーム", "home"], ["統計", "stats"]],
 };
 function Breadcrumb({ screen, onNav }) {
   const items = CRUMBS[screen] || [["ホーム", "home"]];

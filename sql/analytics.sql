@@ -75,3 +75,36 @@ create policy "insert own events"
 -- group by station_id
 -- order by checkins desc
 -- limit 20;
+
+-- ============================================================
+-- アプリ内の「統計画面(#stats)」から呼ぶ集計関数
+--   security definer で RLS を迂回して集計するが、返すのは合計値だけ。
+--   生データ（誰が・いつ）は一切返さないので、匿名キーから呼ばれても安全。
+--   このSQLを SQL Editor で1回実行してください（何度でも再実行可）。
+-- ============================================================
+create or replace function public.get_app_stats()
+returns table (
+  page_views           bigint,
+  unique_users         bigint,
+  pv_last_7d           bigint,
+  total_users          bigint,
+  total_checkins       bigint,
+  users_who_checked_in bigint
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    (select count(*)                from public.app_events    where event = 'page_view'),
+    (select count(distinct user_id) from public.app_events    where event = 'page_view'),
+    (select count(*)                from public.app_events    where event = 'page_view'
+        and created_at >= now() - interval '7 days'),
+    (select count(*)                from auth.users),
+    (select count(*)                from public.station_visits),
+    (select count(distinct user_id) from public.station_visits);
+$$;
+
+-- 匿名キー(anon)・ログイン済み(authenticated) から実行できるようにする
+grant execute on function public.get_app_stats() to anon, authenticated;
+

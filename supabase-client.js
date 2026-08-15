@@ -33,6 +33,14 @@
       get lastError() { return state.lastError; },
       ready: function () { return state.ready; },
 
+      // 集計値の取得（合計値のみ。RLSを迂回するsecurity definer関数を呼ぶ）
+      getStats: async function () {
+        if (!state.enabled) throw new Error("supabase-disabled");
+        var res = await state.client.rpc("get_app_stats");
+        if (res.error) throw res.error;
+        return (res.data && res.data[0]) || null;
+      },
+
       // アクセス集計：ページビューを1件記録（app_events）。個人情報は保存しない。
       logPageView: async function () {
         if (!state.enabled) return false;
