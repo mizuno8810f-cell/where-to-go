@@ -826,7 +826,6 @@ function StatsScreen() {
     { k: "総アクセス数 (PV)", v: data.page_views, hint: "アプリを開いた延べ回数" },
     { k: "ユニーク人数", v: data.unique_users, hint: "PVを出した端末数（目安）" },
     { k: "直近7日のPV", v: data.pv_last_7d, hint: "ここ7日間のアクセス" },
-    { k: "開いた端末数", v: data.total_users, hint: "匿名ユーザーの総数" },
     { k: "ココイク総数", v: data.total_checkins, hint: "「行った」記録の合計" },
     { k: "ココイクした人数", v: data.users_who_checked_in, hint: "記録した端末数" },
   ] : [];
