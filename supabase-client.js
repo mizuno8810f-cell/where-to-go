@@ -33,6 +33,16 @@
       get lastError() { return state.lastError; },
       ready: function () { return state.ready; },
 
+      // アクセス集計：ページビューを1件記録（app_events）。個人情報は保存しない。
+      logPageView: async function () {
+        if (!state.enabled) return false;
+        var res = await state.client
+          .from("app_events")
+          .insert({ user_id: state.userId, event: "page_view" });
+        if (res.error) throw res.error;
+        return true;
+      },
+
       // 現在の匿名ユーザーが、その駅へ行った回数（RLSにより自分の行だけが対象）
       getVisitCount: async function (stationId) {
         if (!state.enabled) return 0;
@@ -166,4 +176,10 @@
   })();
 
   window.SupaHistory = makeApi();
+
+  // 認証できたら、このページ読み込みを1回だけアクセス記録する（集計テーブルが
+  // 未作成でも throw しないよう握りつぶす。アプリ本体の動作には影響しない）。
+  state.ready.then(function (ok) {
+    if (ok) { try { window.SupaHistory.logPageView().catch(function () {}); } catch (e) {} }
+  });
 })();
