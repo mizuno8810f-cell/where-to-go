@@ -894,6 +894,7 @@ function App() {
   const [hf, setHf] = useState({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "prefer" });
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
   const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
@@ -1193,6 +1194,12 @@ function App() {
               <button onClick={() => setMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
             </div>
             <MenuItem
+              icon="📖" title="使い方"
+              desc="このアプリの使い方をおさらいします。"
+              onClick={() => { setMenuOpen(false); setHowToOpen(true); }}
+            />
+            <div style={{ height: 10 }} />
+            <MenuItem
               icon="⚙️" title="設定"
               desc="効果音のオン・オフを切り替えます。"
               onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
@@ -1226,6 +1233,50 @@ function App() {
         </div>
       )}
 
+      {/* 使い方モーダル */}
+      {howToOpen && (
+        <div style={modalWrap} onClick={() => setHowToOpen(false)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>使い方</div>
+              <button onClick={() => setHowToOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+            </div>
+            <p style={{ fontFamily: SANS, fontSize: 14, color: C.inkSoft, margin: "0 0 14px", lineHeight: 1.7 }}>
+              <b>ドコイク？</b>は、行き先に迷ったときに<b>今日のおでかけ先を1つ選んでくれる</b>アプリです。
+            </p>
+            <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+              {[
+                ["1", "条件を選ぶ", "出発駅・所要時間・気分などを選びます。何も選ばず「おまかせ」でもOK。"],
+                ["2", "候補から外す", "条件に合う候補が出ます。行きたくない所は「ここは嫌だ」で外せます。"],
+                ["3", "1つに決める", "「ここから一つ決める」→ ルーレットが回って、今日の行き先が決定！"],
+              ].map(([no, t, sub]) => (
+                <div key={no} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" }}>
+                  <span style={{ flex: "0 0 auto", width: 24, height: 24, borderRadius: "50%", background: C.signal, color: "#fff", fontFamily: MONO, fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>{no}</span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: "block", fontFamily: SANS, fontSize: 15, fontWeight: 800, color: C.ink }}>{t}</span>
+                    <span style={{ display: "block", fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.55 }}>{sub}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 8 }}>ことばの意味</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {[
+                ["ココイク", "行き先が決まったあと、「ここに行く！」と決定＆記録するボタン。"],
+                ["ココイッタ", "実際に行った場所の記録。行った回数を貯めて振り返れます。"],
+                ["ミッション", "おでかけがちょっと楽しくなるお題。結果画面でランダムに出せます。"],
+              ].map(([k, v]) => (
+                <div key={k} style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, lineHeight: 1.6 }}>
+                  <b style={{ color: C.ink }}>{k}</b> … {v}
+                </div>
+              ))}
+            </div>
+            <div style={{ height: 16 }} />
+            <Btn onClick={() => setHowToOpen(false)}>とじる</Btn>
+          </div>
+        </div>
+      )}
+
       {screen === "title" && (
         <Fade key="title">
           <div style={{ minHeight: "76vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 6px" }}>
@@ -1233,13 +1284,32 @@ function App() {
             <p style={{ fontFamily: ROUND, fontSize: 13, fontWeight: 700, color: C.signalDim, letterSpacing: 4, margin: "24px 0 20px" }}>
               WHERE TO GO
             </p>
-            <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 320, margin: 0 }}>
+            <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 330, margin: 0 }}>
+              「今日どこ行く？」を、<b style={{ color: C.signal }}>アプリが代わりに決めてくれる</b>。<br />
               東京・神奈川・埼玉・千葉の1518駅から、<br />
-              今日のおでかけ先をおまかせでご提案。<br />
-              条件を選ぶだけ。迷わず、すぐ決まる。
+              今日のおでかけ先をおまかせでご提案します。
             </p>
-            <div style={{ height: 34 }} />
-            <div style={{ width: "100%", maxWidth: 320 }}>
+            <div style={{ height: 24 }} />
+            <div style={{ width: "100%", maxWidth: 340, background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 16, padding: "16px 16px 8px", textAlign: "left" }}>
+              <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 12, textAlign: "center" }}>
+                つかいかた（3ステップ）
+              </div>
+              {[
+                ["1", "出発駅や気分など、条件を選ぶ", "ぜんぶ「おまかせ」でもOK"],
+                ["2", "出てきた候補から、行きたくない所を外す", null],
+                ["3", "ルーレットで、今日の行き先が1つに決定！", null],
+              ].map(([no, t, sub]) => (
+                <div key={no} style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 12 }}>
+                  <span style={{ flex: "0 0 auto", width: 24, height: 24, borderRadius: "50%", background: C.signal, color: "#fff", fontFamily: MONO, fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>{no}</span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: "block", fontFamily: SANS, fontSize: 14.5, fontWeight: 700, color: C.ink, lineHeight: 1.45 }}>{t}</span>
+                    {sub && <span style={{ display: "block", fontFamily: SANS, fontSize: 12, color: C.muted, marginTop: 1 }}>{sub}</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div style={{ height: 22 }} />
+            <div style={{ width: "100%", maxWidth: 340 }}>
               <Btn onClick={() => setScreen("home")}>はじめる →</Btn>
             </div>
           </div>
@@ -1252,19 +1322,28 @@ function App() {
             今日はどこ行く？
           </h1>
           <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, margin: "0 0 22px" }}>
-            考えるのは最低限。あとはおまかせ。
+            考えるのは最低限。行き先はアプリにおまかせ。
           </p>
           <Board count={count} />
+          <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.muted, textAlign: "center", margin: "8px 0 0", lineHeight: 1.6 }}>
+            いま行けそうな場所の数です。ここから1つに絞り込みます。
+          </p>
           <div style={{ height: 20 }} />
-          <Btn onClick={() => setScreen("step1")}>条件を選ぶ →</Btn>
-          <div style={{ height: 12 }} />
-          <Btn kind="ghost" onClick={search10}>おまかせで候補を出す →</Btn>
+          <Btn onClick={() => setScreen("step1")}>条件を選んで決める →</Btn>
+          <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
+            エリア・時間・気分などで絞ってから決める
+          </p>
+          <div style={{ height: 14 }} />
+          <Btn kind="ghost" onClick={search10}>おまかせですぐ決める →</Btn>
+          <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
+            何も選ばず、いきなり候補を出す
+          </p>
         </Fade>
       )}
 
       {screen === "step1" && (
         <Fade key="step1">
-          <StepHead n="01" title="ゆずれない条件" sub="当てはまらない場所は、はじめから外します。選ばなくてもOK。" />
+          <StepHead n="01" title="ゆずれない条件" sub="ここで選ぶと、合わない場所は最初から候補に出なくなります。ぜんぶ選ばずに進んでもOK。" />
           <Board count={count} note={count === 0 ? "しぼりすぎかも" : count <= 6 ? "だいぶ絞れてきました" : null} />
           <div style={{ height: 22 }} />
 
@@ -1342,12 +1421,15 @@ function App() {
             </div>
           )}
 
-          <FieldLabel eyebrow="RANGE" title="どこまで攻める？" />
+          <FieldLabel eyebrow="RANGE" title="どんな所まで候補に入れる？" />
           <Row>
             <Chip active={hf.priority === "standard"} onClick={() => setHf({ ...hf, priority: "standard" })}>定番だけ</Chip>
             <Chip active={hf.priority === "hidden"} onClick={() => setHf({ ...hf, priority: "hidden" })}>穴場もいれる</Chip>
             <Chip active={hf.priority === "adventure"} onClick={() => setHf({ ...hf, priority: "adventure" })}>超冒険</Chip>
           </Row>
+          <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: "-8px 0 18px", lineHeight: 1.6 }}>
+            定番＝有名でハズさない所／穴場＝ちょっとマイナー／超冒険＝かなりマニアックな所まで
+          </p>
 
           <FieldLabel eyebrow="HISTORY" title="前に行った場所は？" />
           <Row>
@@ -1398,7 +1480,7 @@ function App() {
         const remaining = shown.filter((s) => !excluded.includes(s.id)).length;
         return (
         <Fade key="pick10">
-          <StepHead n="02" title="今日の候補" sub="気が乗らない所は「ここは嫌だ」で外して、残りから1つ選びます。" />
+          <StepHead n="02" title="今日の候補" sub="気が乗らない所は「ここは嫌だ」で外せます。「ここから一つ決める」を押すと、ルーレットで1つに決まります。" />
           {shown.length === 0 ? (
             <div style={{ border: `2px dashed ${C.line}`, borderRadius: 16, padding: 20, background: C.paperCard, textAlign: "center" }}>
               <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, margin: "0 0 14px" }}>
@@ -1945,7 +2027,7 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
 
   return (
     <Fade key="manage">
-      <StepHead n="—" title="ココイッタ" sub="行った場所の記録。回数が多い順にならびます。一覧をタップすると回数を編集できます。" />
+      <StepHead n="—" title="ココイッタ（行った場所の記録）" sub="実際に行った場所がたまっていきます。回数が多い順にならび、一覧をタップすると回数を編集できます。" />
 
       {/* ココイッタ登録ボタン → 駅を検索する状態でモーダルを開く */}
       <Btn kind="primary" onClick={() => openReg("")}>
