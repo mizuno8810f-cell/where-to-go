@@ -99,22 +99,20 @@ const isRecent = (st) => st.lastVisit && NOW - Date.parse(st.lastVisit) < RECENT
 // 絶対条件：searchPriority と 所要時間（＋訪問履歴）で候補から除外する
 // priorityMode: standard=定番(P1) / hidden=穴場も(P1,2) / adventure=超冒険(P1,2,3)
 const PRIORITY_SET = { standard: [1], hidden: [1, 2], adventure: [1, 2, 3] };
-function applyHard(list, hf, timeMaps, wishes) {
+// timeFilters: [{ map, min, max }] 各出発駅ごとの所要時間マップと許容範囲
+function applyHard(list, hf, timeFilters, wishes) {
   const allowed = PRIORITY_SET[hf.priority] || PRIORITY_SET.standard;
   const wishKeys = wishes ? Object.keys(wishes) : [];
-  const maps = (timeMaps && timeMaps.length ? timeMaps : [{}]);
+  const filters = timeFilters && timeFilters.length ? timeFilters : [];
   return list.filter((st) => {
     if (!allowed.includes(st.pr)) return false;
-    if (hf.timeOn) {
-      const upper = hf.timeMax >= 120 ? Infinity : hf.timeMax;
-      // 全出発駅から到達でき、最長の所要時間が範囲内であること
-      let maxT = 0;
-      for (const tm of maps) {
-        const t = tm[st.id];
-        if (t == null) return false;   // 誰か1人でも経路不明なら除外
-        if (t > maxT) maxT = t;
+    if (hf.timeOn && filters.length) {
+      // すべての出発駅について、その駅の所要時間が範囲内であること
+      for (const f of filters) {
+        const t = f.map[st.id];
+        const upper = f.max >= 120 ? Infinity : f.max;
+        if (t == null || t < f.min || t > upper) return false; // 経路不明 or 範囲外は除外
       }
-      if (maxT < hf.timeMin || maxT > upper) return false;
     }
     // 履歴：only=行ってない場所だけ（訪問済み除外）／prefer=優先（除外せず10件抽選で重み）／all=気にしない
     if (hf.history === "only" && st.visited) return false;
@@ -893,7 +891,7 @@ function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
-  const [hf, setHf] = useState({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, history: "prefer" });
+  const [hf, setHf] = useState({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "prefer" });
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
@@ -1021,12 +1019,30 @@ function App() {
     return bases.filter(Boolean).length > 1 ? `最大約${m}分` : `約${m}分`;
   };
 
-  const candidates = useMemo(() => applyHard(stations, hf, timeMaps, hardWishes), [stations, hf, timeMaps, hardWishes]);
+  // 各出発駅ごとの許容時間範囲（timePerBase=false なら全駅とも共通の [timeMin,timeMax]）
+  const timeFilters = useMemo(() => (
+    bases.map((b, i) => {
+      if (!b) return null;
+      const r = hf.timePerBase ? (hf.timeRanges[b] || { min: hf.timeMin, max: hf.timeMax }) : { min: hf.timeMin, max: hf.timeMax };
+      return { map: timeMaps[i] || {}, min: r.min, max: r.max };
+    }).filter(Boolean)
+  ), [bases, timeMaps, hf]);
+
+  const candidates = useMemo(() => applyHard(stations, hf, timeFilters, hardWishes), [stations, hf, timeFilters, hardWishes]);
   const count = candidates.length;
   const hardWishKeyCount = Object.keys(hardWishes).length;
 
+  // 所要時間：駅ごとに設定するトグル。ONにしたら各出発駅の範囲を現在の共通範囲で初期化。
+  const setTimePerBase = (on) => setHf((cur) => {
+    if (!on) return { ...cur, timePerBase: false };
+    const tr = { ...cur.timeRanges };
+    bases.filter(Boolean).forEach((b) => { if (!tr[b]) tr[b] = { min: cur.timeMin, max: cur.timeMax }; });
+    return { ...cur, timePerBase: true, timeRanges: tr };
+  });
+  const setBaseRange = (baseId, lo, hi) => setHf((cur) => ({ ...cur, timeRanges: { ...cur.timeRanges, [baseId]: { min: lo, max: hi } } }));
+
   const resetFlow = () => {
-    setHf({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, history: "prefer" });
+    setHf({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "prefer" });
     setHardWishes({}); setSoftWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setLastRecordedId(null); setMenuOpen(false); setSettingsOpen(false);
     setMissionList(null); setMissionN(1);
@@ -1285,14 +1301,41 @@ function App() {
           </div>
           {hf.timeOn && (
             <div style={{ marginBottom: 18 }}>
-              <div style={{ fontFamily: MONO, fontSize: 15, color: C.signal, fontWeight: 800, textAlign: "center", marginBottom: 2 }}>
-                {hf.timeMin}分 〜 {hf.timeMax >= 120 ? "上限なし" : `${hf.timeMax}分`}
-              </div>
-              <RangeSlider
-                valueMin={hf.timeMin}
-                valueMax={hf.timeMax}
-                onChange={(lo, hi) => setHf({ ...hf, timeMin: lo, timeMax: hi })}
-              />
+              {bases.filter(Boolean).length > 1 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginBottom: 12 }}>
+                  <Chip active={!hf.timePerBase} onClick={() => setTimePerBase(false)}>全駅まとめて</Chip>
+                  <Chip active={hf.timePerBase} onClick={() => setTimePerBase(true)}>駅ごとに設定</Chip>
+                </div>
+              )}
+
+              {(!hf.timePerBase || bases.filter(Boolean).length <= 1) ? (
+                <>
+                  <div style={{ fontFamily: MONO, fontSize: 15, color: C.signal, fontWeight: 800, textAlign: "center", marginBottom: 2 }}>
+                    {hf.timeMin}分 〜 {hf.timeMax >= 120 ? "上限なし" : `${hf.timeMax}分`}
+                  </div>
+                  <RangeSlider
+                    valueMin={hf.timeMin}
+                    valueMax={hf.timeMax}
+                    onChange={(lo, hi) => setHf({ ...hf, timeMin: lo, timeMax: hi })}
+                  />
+                </>
+              ) : (
+                <div style={{ display: "grid", gap: 16 }}>
+                  {bases.map((b, i) => {
+                    if (!b) return null;
+                    const r = hf.timeRanges[b] || { min: hf.timeMin, max: hf.timeMax };
+                    return (
+                      <div key={b + "-" + i}>
+                        <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.ink }}>{baseNames[i] || "出発駅"}</div>
+                        <div style={{ fontFamily: MONO, fontSize: 14, color: C.signal, fontWeight: 800, textAlign: "center", marginBottom: 2 }}>
+                          {r.min}分 〜 {r.max >= 120 ? "上限なし" : `${r.max}分`}
+                        </div>
+                        <RangeSlider valueMin={r.min} valueMax={r.max} onChange={(lo, hi) => setBaseRange(b, lo, hi)} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", margin: "0" }}>
                 ※所要時間は概算です（経路が分からない駅は対象外）
               </p>
