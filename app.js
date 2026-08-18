@@ -99,15 +99,22 @@ const isRecent = (st) => st.lastVisit && NOW - Date.parse(st.lastVisit) < RECENT
 // 絶対条件：searchPriority と 所要時間（＋訪問履歴）で候補から除外する
 // priorityMode: standard=定番(P1) / hidden=穴場も(P1,2) / adventure=超冒険(P1,2,3)
 const PRIORITY_SET = { standard: [1], hidden: [1, 2], adventure: [1, 2, 3] };
-function applyHard(list, hf, timeMap, wishes) {
+function applyHard(list, hf, timeMaps, wishes) {
   const allowed = PRIORITY_SET[hf.priority] || PRIORITY_SET.standard;
   const wishKeys = wishes ? Object.keys(wishes) : [];
+  const maps = (timeMaps && timeMaps.length ? timeMaps : [{}]);
   return list.filter((st) => {
     if (!allowed.includes(st.pr)) return false;
     if (hf.timeOn) {
-      const t = timeMap[st.id];
       const upper = hf.timeMax >= 120 ? Infinity : hf.timeMax;
-      if (t == null || t < hf.timeMin || t > upper) return false;
+      // 全出発駅から到達でき、最長の所要時間が範囲内であること
+      let maxT = 0;
+      for (const tm of maps) {
+        const t = tm[st.id];
+        if (t == null) return false;   // 誰か1人でも経路不明なら除外
+        if (t > maxT) maxT = t;
+      }
+      if (maxT < hf.timeMin || maxT > upper) return false;
     }
     // 履歴：only=行ってない場所だけ（訪問済み除外）／prefer=優先（除外せず10件抽選で重み）／all=気にしない
     if (hf.history === "only" && st.visited) return false;
@@ -890,7 +897,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
-  const [base, setBase] = useState(BASE_DEFAULT);
+  const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
   const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
   const [softWishes, setSoftWishes] = useState([]); // 任意条件フェーズ(STEP3)：重み付けのみ [key,...]
   // 結果表示（相性タグ）用に両方を合成
@@ -915,12 +922,13 @@ function App() {
       const saved = await loadStations();
       if (saved && Array.isArray(saved) && saved.length) setStations(saved);
       try {
-        // 出発駅は Cookie から復元（無ければ旧 window.storage → 既定）
+        // 出発駅は Cookie から復元（カンマ区切りで複数対応。無ければ旧 window.storage → 既定）
+        const parseBases = (s) => { const a = String(s || "").split(",").map((x) => x.trim()).filter(Boolean); return a.length ? a : null; };
         const c = getCookie(BASE_COOKIE);
-        if (c) setBase(c);
+        if (c && parseBases(c)) setBases(parseBases(c));
         else if (typeof window !== "undefined" && window.storage) {
           const b = await window.storage.get("wheretogo:base:v1");
-          if (b && b.value) setBase(b.value);
+          if (b && b.value && parseBases(b.value)) setBases(parseBases(b.value));
         }
       } catch (e) { /* 既定の出発駅 */ }
       setReady(true);
@@ -960,7 +968,10 @@ function App() {
         const st = stations.find((s) => s.id === decodeURIComponent(rm[1]));
         if (st) {
           const bm = h.match(/[#&]b=([^&]+)/);
-          if (bm) setBase(decodeURIComponent(bm[1])); // 表示用のみ（Cookieには保存しない）
+          if (bm) { // 表示用のみ（Cookieには保存しない）。複数出発駅は "." 区切り
+            const arr = decodeURIComponent(bm[1]).split(".").map((x) => x.trim()).filter(Boolean);
+            if (arr.length) setBases(arr);
+          }
           const mm = h.match(/[#&]m=([^&]+)/);
           if (mm) {
             const idxs = decodeURIComponent(mm[1]).split(",").map(Number).filter((i) => !isNaN(i) && MISSIONS[i]);
@@ -977,24 +988,40 @@ function App() {
 
   // 保存
   const persist = (next) => { setStations(next); saveStations(next); };
-  const setBaseAndSave = (id) => {
-    setBase(id);
-    setCookie(BASE_COOKIE, id, 365); // 出発駅を Cookie に保存（1年）
-    try { if (typeof window !== "undefined" && window.storage) window.storage.set("wheretogo:base:v1", id); } catch (e) { /* noop */ }
+  const saveBases = (arr) => {
+    const clean = arr.filter(Boolean);
+    setCookie(BASE_COOKIE, clean.join(","), 365); // 出発駅を Cookie に保存（1年）
+    try { if (typeof window !== "undefined" && window.storage) window.storage.set("wheretogo:base:v1", clean.join(",")); } catch (e) { /* noop */ }
+  };
+  const setBasesAndSave = (arr) => { const a = arr.length ? arr : [BASE_DEFAULT]; setBases(a); saveBases(a); };
+  const setBaseAt = (i, id) => { const a = [...bases]; a[i] = id; setBasesAndSave(a); };
+  const addBase = () => setBasesAndSave([...bases, ""]);           // 空 = 駅未選択（ピッカーが開く）
+  const removeBase = (i) => setBasesAndSave(bases.filter((_, j) => j !== i));
+
+  // 各出発駅からの所要時間マップ（出発駅が変わった時だけ再計算）
+  const timeMaps = useMemo(() => bases.map((b) => (b ? shortestTimes(b) : {})), [bases]);
+  const baseNames = useMemo(() => bases.map((b) => { const s = stations.find((x) => x.id === b); return s ? s.name : ""; }), [stations, bases]);
+  // 候補駅への「各出発駅からの所要時間」リスト
+  const stTimes = (st) => bases.map((b, i) => ({ id: b, name: baseNames[i] || "出発駅", t: b && timeMaps[i] ? timeMaps[i][st.id] : null }));
+  // 全出発駅のうち最長の所要時間（誰か1人でも経路不明なら null）
+  const maxTime = (st) => {
+    let m = 0;
+    for (let i = 0; i < bases.length; i++) {
+      if (!bases[i]) continue;
+      const t = timeMaps[i][st.id];
+      if (t == null) return null;
+      if (t > m) m = t;
+    }
+    return m;
+  };
+  // カード等に出す短い所要時間表記（複数出発駅なら「最大約○分」）
+  const timeSummary = (st) => {
+    const m = maxTime(st);
+    if (m == null) return "経路なし";
+    return bases.filter(Boolean).length > 1 ? `最大約${m}分` : `約${m}分`;
   };
 
-  // 出発駅からの所要時間マップ（出発駅が変わった時だけ再計算）
-  const timeMap = useMemo(() => shortestTimes(base), [base]);
-  const baseName = useMemo(() => {
-    const b = stations.find((s) => s.id === base);
-    return b ? b.name : "新宿";
-  }, [stations, base]);
-  const timeText = (st) => {
-    const t = timeMap[st.id];
-    return t == null ? "経路なし" : `約${t}分`;
-  };
-
-  const candidates = useMemo(() => applyHard(stations, hf, timeMap, hardWishes), [stations, hf, timeMap, hardWishes]);
+  const candidates = useMemo(() => applyHard(stations, hf, timeMaps, hardWishes), [stations, hf, timeMaps, hardWishes]);
   const count = candidates.length;
   const hardWishKeyCount = Object.keys(hardWishes).length;
 
@@ -1043,7 +1070,7 @@ function App() {
   const shareResult = () => {
     if (!chosen) return;
     const idxs = (missionList || []).map((m) => MISSIONS.indexOf(m)).filter((i) => i >= 0);
-    const parts = ["r=" + encodeURIComponent(chosen.id), "b=" + encodeURIComponent(base)];
+    const parts = ["r=" + encodeURIComponent(chosen.id), "b=" + encodeURIComponent(bases.filter(Boolean).join("."))];
     if (idxs.length) parts.push("m=" + idxs.join(","));
     const link = appUrl() + "#" + parts.join("&");
     let text = `ドコイク？のおまかせで、今日は『${chosen.name}』に行くことに決まった！`;
@@ -1226,10 +1253,32 @@ function App() {
           <div style={{ height: 22 }} />
 
           <FieldLabel eyebrow="FROM" title="どこから出かける？" />
-          <BasePicker stations={stations} baseId={base} onPick={setBaseAndSave} />
+          <div style={{ display: "grid", gap: 8 }}>
+            {bases.map((bid, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <BasePicker stations={stations} baseId={bid} onPick={(id) => setBaseAt(i, id)} index={bases.length > 1 ? i + 1 : null} />
+                </div>
+                {bases.length > 1 && (
+                  <button onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.minus(); } removeBase(i); }}
+                    aria-label="この出発駅を削除"
+                    style={{ flex: "0 0 auto", width: 44, borderRadius: 12, border: `1.5px solid ${C.line}`, background: C.paperCard, color: C.danger, fontFamily: SANS, fontSize: 18, fontWeight: 800, cursor: "pointer" }}>✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <button onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.plus(); } addBase(); }}
+            style={{ marginTop: 8, background: "none", border: `1.5px dashed ${C.signal}`, color: C.signal, borderRadius: 12, padding: "10px 14px", fontFamily: SANS, fontSize: 14, fontWeight: 700, cursor: "pointer", width: "100%" }}>
+            ＋ 出発駅を追加
+          </button>
+          {bases.filter(Boolean).length > 1 && (
+            <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: "8px 0 0", lineHeight: 1.6 }}>
+              複数のときは、<b>すべての出発駅から時間内に行ける場所</b>だけを候補にします（所要時間は各駅ぶん表示します）。
+            </p>
+          )}
           <div style={{ height: 18 }} />
 
-          <FieldLabel eyebrow="TIME" title={`${baseName}からの所要時間`} />
+          <FieldLabel eyebrow="TIME" title={bases.filter(Boolean).length > 1 ? "各出発駅からの所要時間" : `${baseNames[0] || "出発駅"}からの所要時間`} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginBottom: hf.timeOn ? 6 : 18 }}>
             <Chip active={!hf.timeOn} onClick={() => setHf({ ...hf, timeOn: false })}>おまかせ</Chip>
             <Chip active={hf.timeOn} onClick={() => setHf({ ...hf, timeOn: true })}>時間で絞る</Chip>
@@ -1324,7 +1373,7 @@ function App() {
                   <div key={st.id} className="deal" style={{ animationDelay: `${i * 45}ms` }}>
                     <StationCard
                       st={st} index={i}
-                      timeText={hf.timeOn ? timeText(st) : null}
+                      timeText={hf.timeOn ? timeSummary(st) : null}
                       excludedMark={excluded.includes(st.id)}
                       onToggleExclude={() => toggleExclude(st)}
                     />
@@ -1385,8 +1434,21 @@ function App() {
       {screen === "final" && chosen && (
         <Fade key="final">
           <div className="reveal">
-            <Ticket st={chosen} timeText={timeMap[chosen.id] != null ? timeText(chosen) : null} wishes={shownWishes} />
+            <Ticket st={chosen} timeText={maxTime(chosen) != null ? timeSummary(chosen) : null} wishes={shownWishes} />
           </div>
+          {bases.filter(Boolean).length > 1 && (
+            <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", marginTop: 12 }}>
+              <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 6 }}>各出発駅からの所要時間</div>
+              <div style={{ display: "grid", gap: 6 }}>
+                {stTimes(chosen).map((r, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontFamily: SANS, fontSize: 14 }}>
+                    <span style={{ color: C.ink, fontWeight: 700 }}>{r.name}</span>
+                    <span style={{ fontFamily: MONO, color: r.t == null ? C.muted : C.signalDim, fontWeight: 700 }}>{r.t == null ? "経路なし" : `約${r.t}分`}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, textAlign: "center", margin: "10px 6px 0", lineHeight: 1.6 }}>
             ※所要時間は概算です（乗換・待ち時間は含みません）。実際の経路・所要時間・営業状況はご自身でお確かめください。
           </p>
@@ -1742,10 +1804,10 @@ function MenuItem({ icon, title, desc, onClick }) {
 /* ============================================================
    駅管理
    ============================================================ */
-function BasePicker({ stations, baseId, onPick }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
+function BasePicker({ stations, baseId, onPick, index }) {
   const cur = stations.find((s) => s.id === baseId);
+  const [open, setOpen] = useState(!baseId); // 未選択なら最初から検索を開く
+  const [q, setQ] = useState("");
   const matches = useMemo(() => {
     const query = q.trim();
     if (!query) return [];
@@ -1754,12 +1816,15 @@ function BasePicker({ stations, baseId, onPick }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} style={{
-        width: "100%", textAlign: "left", background: C.paperCard, border: `1.5px solid ${C.line}`,
+        width: "100%", textAlign: "left", background: C.paperCard, border: `1.5px solid ${cur ? C.line : C.signal}`,
         borderRadius: 12, padding: "12px 14px", cursor: "pointer", fontFamily: SANS,
-        display: "flex", justifyContent: "space-between", alignItems: "center",
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
       }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: C.ink }}>{cur ? cur.name : "新宿"}</span>
-        <span style={{ fontFamily: MONO, fontSize: 12, color: C.signal, fontWeight: 700 }}>変更</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: cur ? C.ink : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {index != null && <span style={{ fontFamily: MONO, fontSize: 12, color: C.signal, marginRight: 6 }}>{index}.</span>}
+          {cur ? cur.name : "駅を選ぶ"}
+        </span>
+        <span style={{ fontFamily: MONO, fontSize: 12, color: C.signal, fontWeight: 700, flex: "0 0 auto" }}>{cur ? "変更" : "選ぶ"}</span>
       </button>
     );
   }
