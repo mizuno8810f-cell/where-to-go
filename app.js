@@ -148,6 +148,23 @@ function pickWeighted(pool, wishes) {
   return pool[pool.length - 1];
 }
 
+// 同じ駅名（例：路線違いの「浅草」）を1件にまとめる。rank(小さいほど優先)で代表を選ぶ。
+function dedupeByName(list, rank) {
+  const best = new Map();
+  for (const st of list) {
+    const cur = best.get(st.name);
+    if (!cur || rank(st) < rank(cur)) best.set(st.name, st);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const st of list) {
+    if (seen.has(st.name)) continue;
+    seen.add(st.name);
+    out.push(best.get(st.name));
+  }
+  return out;
+}
+
 // プールからランダムに n 件（重複なし）
 function sample(pool, n) {
   const a = [...pool];
@@ -1029,7 +1046,11 @@ function App() {
     }).filter(Boolean)
   ), [bases, timeMaps, hf]);
 
-  const candidates = useMemo(() => applyHard(stations, hf, timeFilters, hardWishes), [stations, hf, timeFilters, hardWishes]);
+  const candidates = useMemo(() => {
+    const filtered = applyHard(stations, hf, timeFilters, hardWishes);
+    // 同名駅（路線違い）は、一番早く着ける1件だけを候補に残す
+    return dedupeByName(filtered, (st) => { const m = maxTime(st); return m == null ? Infinity : m; });
+  }, [stations, hf, timeFilters, hardWishes]);
   const count = candidates.length;
   const hardWishKeyCount = Object.keys(hardWishes).length;
 
