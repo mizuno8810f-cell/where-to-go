@@ -967,6 +967,19 @@ function App() {
     if (typeof window !== "undefined") window.scrollTo(0, 0);
   }, [screen]);
 
+  // STEP1：大きな候補ボードが画面外に出たら、上部に小さな件数バッジを固定表示
+  const boardRef = useRef(null);
+  const [boardVisible, setBoardVisible] = useState(true);
+  useEffect(() => {
+    setBoardVisible(true);
+    if (screen !== "step1" || typeof IntersectionObserver === "undefined") return;
+    const el = boardRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setBoardVisible(e.isIntersecting), { threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [screen]);
+
   // 共有リンク(#r=駅&b=出発駅&m=ミッション)で開かれたら、同じ結果画面を復元する
   const sharedApplied = useRef(false);
   useEffect(() => {
@@ -1359,13 +1372,22 @@ function App() {
           <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
             何も選ばず、いきなり候補を出す
           </p>
+          <div style={{ height: 22 }} />
+          <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
+            <Btn kind="ghost" onClick={() => setScreen("manage")}>📍 ココイッタ登録 →</Btn>
+            <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
+              行った場所を記録・確認する
+            </p>
+          </div>
         </Fade>
       )}
 
       {screen === "step1" && (
         <Fade key="step1">
           <StepHead n="01" title="ゆずれない条件" sub="ここで選ぶと、合わない場所は最初から候補に出なくなります。ぜんぶ選ばずに進んでもOK。" />
-          <Board count={count} note={count === 0 ? "しぼりすぎかも" : count <= 6 ? "だいぶ絞れてきました" : null} />
+          <div ref={boardRef}>
+            <Board count={count} note={count === 0 ? "しぼりすぎかも" : count <= 6 ? "だいぶ絞れてきました" : null} />
+          </div>
           <div style={{ height: 22 }} />
 
           <FieldLabel eyebrow="FROM" title="どこから出かける？" />
@@ -1646,6 +1668,19 @@ function App() {
       )}
 
       {screen === "stats" && <StatsScreen />}
+
+      {/* STEP1でボードが見えなくなったら、上部に小さな件数バッジを固定表示 */}
+      {screen === "step1" && !boardVisible && (
+        <div style={{
+          position: "fixed", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 45,
+          background: C.ink, color: "#fff", borderRadius: 999, padding: "8px 18px",
+          display: "flex", alignItems: "baseline", gap: 7, boxShadow: "0 6px 20px -6px rgba(23,38,58,.6)",
+        }}>
+          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: 2, color: C.signalBright, fontWeight: 700 }}>候補</span>
+          <span style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: count === 0 ? C.amber : "#fff", fontVariantNumeric: "tabular-nums" }}>{count}</span>
+          <span style={{ fontFamily: SANS, fontSize: 12, color: "#B9C3CE", fontWeight: 600 }}>件</span>
+        </div>
+      )}
 
       {/* 共有時のフィードバック（コピー時など） */}
       {shareToast && (
