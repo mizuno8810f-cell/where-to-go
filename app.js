@@ -821,12 +821,65 @@ function MissionBox({ n, onN, list, onGenerate }) {
   );
 }
 
-/* 集計画面（隠しURL #stats）：主要数値の表示＋リロード */
+/* 日別データを直近n日で0埋めして時系列配列にする */
+function fillDays(rows, key, n) {
+  const map = {};
+  (rows || []).forEach((r) => { map[String(r.day)] = Number(r[key]) || 0; });
+  const out = [];
+  const base = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(base); d.setDate(base.getDate() - i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    out.push({ iso, label: `${d.getMonth() + 1}/${d.getDate()}`, value: map[iso] || 0 });
+  }
+  return out;
+}
+
+/* 軽量な日別バーグラフ（棒をタップでその日の値） */
+function MiniBars({ data }) {
+  const [sel, setSel] = useState(null);
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const total = data.reduce((a, d) => a + d.value, 0);
+  const H = 150;
+  const selD = sel != null ? data[sel] : null;
+  return (
+    <div>
+      <div style={{ height: 22, textAlign: "center", fontFamily: MONO, fontSize: 13, color: C.signalDim, fontWeight: 700 }}>
+        {selD ? `${selD.label} ・ ${selD.value}` : `直近${data.length}日 ・ 合計 ${total}`}
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: H, padding: "6px 0", borderBottom: `1px solid ${C.line}` }}>
+        {data.map((d, i) => {
+          const h = Math.round((d.value / max) * (H - 14));
+          const on = sel === i;
+          return (
+            <button key={d.iso} onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setSel(on ? null : i); }}
+              aria-label={`${d.label} ${d.value}`}
+              style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "flex-end", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+              <span style={{ width: "100%", height: Math.max(2, h), borderRadius: 3, background: on ? C.amber : (d.value ? C.signal : C.line) }} />
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontFamily: MONO, fontSize: 10, color: C.muted }}>
+        <span>{data[0] && data[0].label}</span>
+        <span>{data[data.length - 1] && data[data.length - 1].label}</span>
+      </div>
+      <div style={{ fontFamily: SANS, fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8 }}>
+        棒をタップすると、その日の値が見られます（1日の最大 {max}）
+      </div>
+    </div>
+  );
+}
+
+/* 集計画面（隠しURL #stats）：主要数値の表示＋リロード＋日別グラフ */
 function StatsScreen() {
   const [data, setData] = useState(null);
+  const [pvDaily, setPvDaily] = useState(null);
+  const [ceDaily, setCeDaily] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ok | error | disabled
   const [err, setErr] = useState("");
   const [updated, setUpdated] = useState(null);
+  const [detail, setDetail] = useState(null); // タップしたカード（グラフ表示）
 
   const load = async () => {
     setStatus("loading"); setErr("");
@@ -836,7 +889,10 @@ function StatsScreen() {
       const ok = await SH.ready();
       if (!ok) { setStatus("disabled"); setErr(SH.lastError || "Supabase未接続"); return; }
       const d = await SH.getStats();
-      setData(d); setUpdated(new Date()); setStatus("ok");
+      let pv = null, ce = null;
+      try { pv = await SH.getPvDaily(30); } catch (e) { /* 日別関数が未作成でも合計は表示 */ }
+      try { ce = await SH.getCheckinsDaily(30); } catch (e) { /* 同上 */ }
+      setData(d); setPvDaily(pv); setCeDaily(ce); setUpdated(new Date()); setStatus("ok");
     } catch (e) {
       setErr((e && e.message) || String(e)); setStatus("error");
     }
@@ -845,11 +901,11 @@ function StatsScreen() {
 
   const num = (v) => (v == null ? "—" : Number(v).toLocaleString("ja-JP"));
   const cards = data ? [
-    { k: "総アクセス数 (PV)", v: data.page_views, hint: "アプリを開いた延べ回数" },
-    { k: "ユニーク人数", v: data.unique_users, hint: "PVを出した端末数（目安）" },
-    { k: "直近7日のPV", v: data.pv_last_7d, hint: "ここ7日間のアクセス" },
-    { k: "ココイク総数", v: data.total_checkins, hint: "「行った」記録の合計" },
-    { k: "ココイクした人数", v: data.users_who_checked_in, hint: "記録した端末数" },
+    { key: "pv", k: "総アクセス数 (PV)", v: data.page_views, hint: "アプリを開いた延べ回数", avail: pvDaily != null, series: () => fillDays(pvDaily, "pv", 30) },
+    { key: "uniq", k: "ユニーク人数", v: data.unique_users, hint: "PVを出した端末数（目安）", avail: pvDaily != null, series: () => fillDays(pvDaily, "uniques", 30) },
+    { key: "pv7", k: "直近7日のPV", v: data.pv_last_7d, hint: "ここ7日間のアクセス", avail: pvDaily != null, series: () => fillDays(pvDaily, "pv", 30) },
+    { key: "ck", k: "ココイク総数", v: data.total_checkins, hint: "「行った」記録の合計", avail: ceDaily != null, series: () => fillDays(ceDaily, "checkins", 30) },
+    { key: "cku", k: "ココイクした人数", v: data.users_who_checked_in, hint: "記録した端末数", avail: ceDaily != null, series: () => fillDays(ceDaily, "users", 30) },
   ] : [];
 
   return (
@@ -864,18 +920,27 @@ function StatsScreen() {
           最終更新 {updated.toLocaleString("ja-JP")}
         </p>
       )}
+      {status === "ok" && (
+        <p style={{ fontFamily: SANS, fontSize: 12, color: C.signal, textAlign: "center", margin: "8px 0 0", fontWeight: 700 }}>
+          📈 カードをタップすると日別グラフが見られます
+        </p>
+      )}
       <div style={{ height: 18 }} />
 
       {status === "ok" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {cards.map((c) => (
-            <div key={c.k} style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 16, padding: "16px 14px" }}>
-              <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, fontWeight: 700 }}>{c.k}</div>
+            <button key={c.key} onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setDetail(c); }}
+              style={{ textAlign: "left", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 16, padding: "16px 14px", cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, fontWeight: 700 }}>{c.k}</span>
+                <span style={{ fontSize: 13, opacity: 0.7 }}>📈</span>
+              </div>
               <div style={{ fontFamily: MONO, fontSize: 34, fontWeight: 800, color: C.ink, margin: "4px 0 2px", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
                 {num(c.v)}
               </div>
               <div style={{ fontFamily: SANS, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>{c.hint}</div>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -895,6 +960,28 @@ function StatsScreen() {
               : "しばらくしてからもう一度お試しください。"}
           </p>
           <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted, wordBreak: "break-all" }}>{err}</div>
+        </div>
+      )}
+
+      {/* カードをタップ → 日別グラフ */}
+      {detail && (
+        <div style={modalWrap} onClick={() => setDetail(null)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ fontFamily: SANS, fontSize: 18, fontWeight: 800, color: C.ink }}>{detail.k}</div>
+              <button onClick={() => setDetail(null)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+            </div>
+            <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginBottom: 14 }}>{detail.hint}・日別（直近30日）</div>
+            {detail.avail ? (
+              <MiniBars data={detail.series()} />
+            ) : (
+              <p style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, lineHeight: 1.7 }}>
+                グラフ用の関数（get_pv_daily / get_checkins_daily）がまだ作成されていない可能性があります。sql/analytics.sql の日別関数SQLを Supabase の SQL Editor で実行してください。
+              </p>
+            )}
+            <div style={{ height: 16 }} />
+            <Btn onClick={() => setDetail(null)}>とじる</Btn>
+          </div>
         </div>
       )}
     </Fade>

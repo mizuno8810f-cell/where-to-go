@@ -41,6 +41,22 @@
         return (res.data && res.data[0]) || null;
       },
 
+      // 日別のPV/ユニーク（グラフ用・合計値のみ）
+      getPvDaily: async function (nDays) {
+        if (!state.enabled) throw new Error("supabase-disabled");
+        var res = await state.client.rpc("get_pv_daily", { n_days: nDays || 30 });
+        if (res.error) throw res.error;
+        return res.data || [];
+      },
+
+      // 日別のココイク数/人数（グラフ用・合計値のみ）
+      getCheckinsDaily: async function (nDays) {
+        if (!state.enabled) throw new Error("supabase-disabled");
+        var res = await state.client.rpc("get_checkins_daily", { n_days: nDays || 30 });
+        if (res.error) throw res.error;
+        return res.data || [];
+      },
+
       // アクセス集計：ページビューを1件記録（app_events）。個人情報は保存しない。
       logPageView: async function () {
         if (!state.enabled) return false;

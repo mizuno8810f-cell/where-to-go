@@ -108,3 +108,43 @@ $$;
 -- 匿名キー(anon)・ログイン済み(authenticated) から実行できるようにする
 grant execute on function public.get_app_stats() to anon, authenticated;
 
+-- ============================================================
+-- 統計画面のグラフ用：日別の集計（合計値のみ。生データは返さない）
+--   day = JST(Asia/Tokyo)の日付。直近 n_days 日ぶん。
+--   このSQLも SQL Editor で1回実行してください。
+-- ============================================================
+create or replace function public.get_pv_daily(n_days int default 30)
+returns table (day date, pv bigint, uniques bigint)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    (created_at at time zone 'Asia/Tokyo')::date as day,
+    count(*)::bigint                              as pv,
+    count(distinct user_id)::bigint              as uniques
+  from public.app_events
+  where event = 'page_view'
+    and created_at >= now() - make_interval(days => n_days)
+  group by 1
+  order by 1;
+$$;
+grant execute on function public.get_pv_daily(int) to anon, authenticated;
+
+create or replace function public.get_checkins_daily(n_days int default 30)
+returns table (day date, checkins bigint, users bigint)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    (visited_at at time zone 'Asia/Tokyo')::date as day,
+    count(*)::bigint                             as checkins,
+    count(distinct user_id)::bigint             as users
+  from public.station_visits
+  where visited_at >= now() - make_interval(days => n_days)
+  group by 1
+  order by 1;
+$$;
+grant execute on function public.get_checkins_daily(int) to anon, authenticated;
+
