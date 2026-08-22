@@ -53,7 +53,7 @@ function Logo({ size = 34 }) {
 }
 
 /* ============================================================
-   データ（東京・神奈川・埼玉・千葉 1518駅 / おでかけ先ネットワーク v2）
+   データ（東京・神奈川・埼玉・千葉 1518レコード＝重複排除後1515駅 / おでかけ先ネットワーク v2）
    RAW: i=id, n=駅名, p=県(0東京/1神奈川), r=searchPriority,
         f=dateFeature, s=dateScores(下記SCORE_KEYS順の19値)
    ADJ: 隣接駅グラフ（所要時間の経路計算用）
@@ -1436,7 +1436,7 @@ function App() {
             </p>
             <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 330, margin: 0 }}>
               「今日どこ行く？」を、<b style={{ color: C.signal }}>アプリが代わりに決めてくれる</b>。<br />
-              東京・神奈川・埼玉・千葉の1518駅から、<br />
+              東京・神奈川・埼玉・千葉の1515駅から、<br />
               今日のおでかけ先をおまかせでご提案します。
             </p>
             <div style={{ height: 24 }} />
