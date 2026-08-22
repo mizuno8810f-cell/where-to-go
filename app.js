@@ -1016,6 +1016,8 @@ function App() {
   const [hf, setHf] = useState({ ...DEFAULT_HF, timeRanges: {} });
   const [fromShare, setFromShare] = useState(false); // 共有リンクで開いた結果を閲覧中か（他人の条件を見せない対策）
   const [omakase, setOmakase] = useState(false); // 「おまかせで決める」＝全駅・出発駅/距離を無視
+  const [refine, setRefine] = useState({});   // 候補画面での「気分でしぼりこむ」
+  const [refineOpen, setRefineOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
@@ -1166,6 +1168,35 @@ function App() {
   const count = candidates.length;
   const hardWishKeyCount = Object.keys(hardWishes).length;
 
+  // 候補画面での「気分でしぼりこむ」。いま出ている母集団をさらに絞って引き直す。
+  // STEP1の条件はいじらないので、戻れば元の候補に戻る。
+  const basePool = omakase ? allStations : candidates;
+  const refineKeys = Object.keys(refine);
+  const refinedPool = useMemo(() => {
+    if (!refineKeys.length) return basePool;
+    return basePool.filter((s) => refineKeys.every((k) => (s.scores[k] || 0) >= 4));
+  }, [basePool, refine]);
+  // 各気分を足したら何件になるかを先に出しておく（0件のチップは押せなくする）
+  const refineCounts = useMemo(() => {
+    const m = {};
+    Object.keys(WISH_LABEL).forEach((k) => {
+      const ks = refine[k] ? refineKeys.filter((x) => x !== k) : refineKeys.concat(k);
+      m[k] = ks.length ? basePool.filter((s) => ks.every((x) => (s.scores[x] || 0) >= 4)).length : basePool.length;
+    });
+    return m;
+  }, [basePool, refine]);
+  const drawFrom = (pool) => {
+    setShown(sampleBy(pool, 10, (s) => historyWeight(s, hf) * iconicWeight(s, hf)));
+    setExcluded([]); setChosen(null);
+  };
+  const toggleRefine = (k) => {
+    const next = { ...refine };
+    if (next[k]) delete next[k]; else next[k] = "on";
+    setRefine(next);
+    const ks = Object.keys(next);
+    drawFrom(ks.length ? basePool.filter((s) => ks.every((x) => (s.scores[x] || 0) >= 4)) : basePool);
+  };
+
   // 候補が少ない/0件のとき、「どの条件をどうゆるめると何件になるか」を計算して提案する。
   // 実際に効く順に並べ、押すとその条件に切り替わる。
   const relaxSuggestions = useMemo(() => {
@@ -1269,7 +1300,7 @@ function App() {
     setHardWishes({}); setSoftWishes([]); setBases([BASE_DEFAULT]);
     setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setMissionList(null); setMissionN(1);
-    setLastRecordedId(null); setFromShare(false); setOmakase(false);
+    setLastRecordedId(null); setFromShare(false); setOmakase(false); setRefine({}); setRefineOpen(false);
   };
   const clearHash = () => { try { if (typeof history !== "undefined" && history.replaceState && location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* noop */ } };
 
@@ -1358,13 +1389,13 @@ function App() {
 
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
-    setOmakase(false);
+    setOmakase(false); setRefine({}); setRefineOpen(false);
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf) * iconicWeight(s, hf)));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
   // おまかせ：出発駅・距離・条件を無視して、全駅からランダムに10件
   const searchOmakase = () => {
-    setOmakase(true);
+    setOmakase(true); setRefine({}); setRefineOpen(false);
     setShown(sample(allStations, 10));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
@@ -1782,8 +1813,62 @@ function App() {
             </div>
           ) : (
             <>
+              {/* 気分でしぼりこむ：条件を戻さずに、この場で候補を引き直せる */}
+              <button
+                onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } setRefineOpen((v) => !v); }}
+                style={{
+                  width: "100%", textAlign: "left", background: refineKeys.length ? "rgba(14,140,129,.08)" : C.paperCard,
+                  border: `1.5px solid ${refineKeys.length ? C.signal : C.line}`, borderRadius: 12,
+                  padding: "11px 14px", cursor: "pointer", display: "flex",
+                  justifyContent: "space-between", alignItems: "center", marginBottom: 10,
+                }}
+              >
+                <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.ink }}>
+                  🔎 気分でしぼりこむ
+                  {refineKeys.length > 0 && (
+                    <span style={{ color: C.signal }}>（{refineKeys.map((k) => WISH_LABEL[k]).join("・")}）</span>
+                  )}
+                </span>
+                <span style={{ fontFamily: MONO, fontSize: 16, color: C.signal, fontWeight: 700 }}>{refineOpen ? "－" : "＋"}</span>
+              </button>
+              {refineOpen && (
+                <div className="fade" style={{ marginBottom: 12 }}>
+                  <p style={{ fontFamily: SANS, fontSize: 12, color: C.inkSoft, margin: "0 0 8px", lineHeight: 1.6 }}>
+                    タップすると、その気分に合う駅だけで<b>候補を引き直します</b>。条件はそのままなので、もう一度押せば戻せます。
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                    {Object.keys(WISH_LABEL).map((k) => {
+                      const on = !!refine[k];
+                      const n = refineCounts[k] || 0;
+                      const dead = !on && n === 0;
+                      return (
+                        <button
+                          key={k}
+                          disabled={dead}
+                          onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } toggleRefine(k); }}
+                          style={{
+                            appearance: "none", borderRadius: 999, padding: "8px 12px",
+                            border: `1.5px solid ${on ? C.signal : C.line}`,
+                            background: on ? C.signal : C.paperCard,
+                            color: on ? "#fff" : (dead ? C.muted : C.ink),
+                            fontFamily: SANS, fontSize: 13, fontWeight: on ? 700 : 500,
+                            cursor: dead ? "not-allowed" : "pointer", opacity: dead ? 0.4 : 1,
+                          }}
+                        >
+                          {WISH_LABEL[k]}
+                          <span style={{ fontFamily: MONO, fontSize: 11, marginLeft: 5, opacity: 0.75 }}>{n}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginBottom: 10 }}>
                 のこり {remaining} 件
+                {refineKeys.length > 0 && (
+                  <span style={{ color: C.signal, fontWeight: 700 }}>　/　しぼりこみ後 {refinedPool.length} 件から抽選</span>
+                )}
               </div>
               <div style={{ display: "grid", gap: 12 }}>
                 {shown.map((st, i) => (
