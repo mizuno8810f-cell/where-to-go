@@ -14,13 +14,14 @@ data/stations.json の dateFeature（街の特徴）と scores を補完・修�
   python3 tools/enrich_features.py             # data/stations.json を更新
 """
 import json, argparse, os, sys
+from collections import Counter as collections_Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATH = os.path.join(ROOT, "data", "stations.json")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from curated_features import CURATED, SCORE_FIXES, PROFILES, KEYS, BASE
-from curated_core import CORE, FIVES, FOURS, PRIORITY_FIX
+from curated_core import CORE, FIVES, FOURS, PRIORITY_FIX, ICONIC
 
 
 def build_scores(profile, over):
@@ -108,6 +109,19 @@ def main():
                 st["scores"][mood] = 4
                 floored += 1
     print(f"5に格上げ: {promoted} 件 / 5→4に格下げ: {demoted} 件 / 4に底上げ: {floored} 件")
+
+    # ⑥ 王道度(iconic)を付与。未指定は種別から決める。
+    #    「定番だけ」で一様抽選になり、渋谷と高幡不動が同確率になる問題への対処。
+    icn = collections_Counter()
+    for st in data:
+        v = ICONIC.get(st["name"])
+        if v is None:
+            v = {1: 3, 2: 2, 3: 1}[st["searchPriority"]]
+        st["iconic"] = v
+        icn[v] += 1
+    print("王道度の分布: " + " / ".join(f"{k}:{icn[k]}駅" for k in sorted(icn, reverse=True)))
+    for n in set(ICONIC) - {s["name"] for s in data}:
+        unmatched.append(f"ICONIC の {n}")
 
     allnames_f = {s["name"] for s in data}
     for mood, names in FOURS.items():
