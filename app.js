@@ -61,8 +61,8 @@ function Logo({ size = 34 }) {
 const SCORE_KEYS = ["drinking","gourmet","cafe","shopping","entertainment","nature","walk","scenery","nightView","indoor","outdoor","rainyDay","active","relax","romantic","unique","lateNight","fullDay","shortStay"];
 const AREA_LABEL = ["東京", "神奈川"];
 const BASE_DEFAULT = "1130208"; // 新宿
-// 条件ゼロ（ホームに戻ると常にこの状態。おまかせはこの状態で候補を出す）
-const ZERO_HF = { priority: "standard", timeOn: false, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "all" };
+// 検索条件のデフォルト値（ホームに戻ると常にこの状態に戻す）
+const DEFAULT_HF = { priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "prefer" };
 
 // 隣接駅グラフは data/adjacency.json から起動時に読み込む
 let ADJ = {};
@@ -997,8 +997,9 @@ function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
-  const [hf, setHf] = useState({ ...ZERO_HF, timeRanges: {} });
+  const [hf, setHf] = useState({ ...DEFAULT_HF, timeRanges: {} });
   const [fromShare, setFromShare] = useState(false); // 共有リンクで開いた結果を閲覧中か（他人の条件を見せない対策）
+  const [omakase, setOmakase] = useState(false); // 「おまかせで決める」＝全駅・出発駅/距離を無視
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
@@ -1148,6 +1149,8 @@ function App() {
   }, [stations, hf, timeFilters, hardWishes]);
   const count = candidates.length;
   const hardWishKeyCount = Object.keys(hardWishes).length;
+  // 全駅（同名は1件に集約）。おまかせ＝出発駅/距離を無視して全駅から。
+  const allStations = useMemo(() => dedupeByName(stations, () => 0), [stations]);
 
   // 所要時間：駅ごとに設定するトグル。ONにしたら各出発駅の範囲を現在の共通範囲で初期化。
   const setTimePerBase = (on) => setHf((cur) => {
@@ -1158,13 +1161,13 @@ function App() {
   });
   const setBaseRange = (baseId, lo, hi) => setHf((cur) => ({ ...cur, timeRanges: { ...cur.timeRanges, [baseId]: { min: lo, max: hi } } }));
 
-  // 条件を丸ごとリセット（ゼロ状態へ）。出発駅も既定に戻す（Cookieは消さない）。
+  // 条件を丸ごとリセット（デフォルト値へ）。出発駅も既定に戻す（Cookieは消さない）。
   const resetConditions = () => {
-    setHf({ ...ZERO_HF, timeRanges: {} });
+    setHf({ ...DEFAULT_HF, timeRanges: {} });
     setHardWishes({}); setSoftWishes([]); setBases([BASE_DEFAULT]);
     setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setMissionList(null); setMissionN(1);
-    setLastRecordedId(null); setFromShare(false);
+    setLastRecordedId(null); setFromShare(false); setOmakase(false);
   };
   const clearHash = () => { try { if (typeof history !== "undefined" && history.replaceState && location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* noop */ } };
 
@@ -1186,11 +1189,11 @@ function App() {
     const arr = c ? c.split(",").map((x) => x.trim()).filter(Boolean) : [];
     return arr.length ? arr : [BASE_DEFAULT];
   };
-  // ホームの「条件を選んで決める」：Cookieの出発駅を復元してSTEP1へ（条件はゼロのまま）
-  const startConditions = () => { setBases(basesFromCookie()); setScreen("step1"); };
-  // 各画面の「条件を変えて選び直す」：いまの条件を保ったままSTEP1へ
-  const backToConditions = () => setScreen("step1");
-  // 共有結果を見ている人が「自分でも試す」：自分の条件（ゼロ＋自分のCookie出発駅）でSTEP1へ
+  // ホームの「条件を選んで決める」：Cookieの出発駅を復元してSTEP1へ（条件はデフォルト値）
+  const startConditions = () => { setOmakase(false); setBases(basesFromCookie()); setScreen("step1"); };
+  // 各画面の「条件を変えて選び直す」：いまの条件を保ったままSTEP1へ（おまかせ由来なら出発駅を復元）
+  const backToConditions = () => { if (omakase) setBases(basesFromCookie()); setOmakase(false); setScreen("step1"); };
+  // 共有結果を見ている人が「自分でも試す」：自分の条件（デフォルト＋自分のCookie出発駅）でSTEP1へ
   const startOwnConditions = () => { resetConditions(); setBases(basesFromCookie()); clearHash(); setScreen("step1"); };
 
   // ミッション（結果画面）：共有・復元のため App が保持
@@ -1253,7 +1256,14 @@ function App() {
 
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
+    setOmakase(false);
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
+    setExcluded([]); setChosen(null); setScreen("pick10");
+  };
+  // おまかせ：出発駅・距離・条件を無視して、全駅からランダムに10件
+  const searchOmakase = () => {
+    setOmakase(true);
+    setShown(sample(allStations, 10));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
 
@@ -1460,9 +1470,9 @@ function App() {
           <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, margin: "0 0 22px" }}>
             考えるのは最低限。行き先はアプリにおまかせ。
           </p>
-          <Board count={count} />
+          <Board count={allStations.length} />
           <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.muted, textAlign: "center", margin: "8px 0 0", lineHeight: 1.6 }}>
-            いま行けそうな場所の数です。ここから1つに絞り込みます。
+            東京・神奈川・埼玉・千葉の全駅。ここから今日の1つを決めます。
           </p>
           <div style={{ height: 20 }} />
           <Btn onClick={startConditions}>条件を選んで決める →</Btn>
@@ -1470,9 +1480,9 @@ function App() {
             エリア・時間・気分などで絞ってから決める
           </p>
           <div style={{ height: 14 }} />
-          <Btn kind="ghost" onClick={search10}>おまかせですぐ決める →</Btn>
+          <Btn kind="ghost" onClick={searchOmakase}>おまかせですぐ決める →</Btn>
           <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
-            何も選ばず、いきなり候補を出す
+            条件なし・全駅からランダムに候補を出す
           </p>
           <div style={{ height: 22 }} />
           <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
@@ -1643,7 +1653,7 @@ function App() {
                   <div key={st.id} className="deal" style={{ animationDelay: `${i * 45}ms` }}>
                     <StationCard
                       st={st} index={i}
-                      timeText={hf.timeOn ? timeSummary(st) : null}
+                      timeText={(!omakase && hf.timeOn) ? timeSummary(st) : null}
                       excludedMark={excluded.includes(st.id)}
                       onToggleExclude={() => toggleExclude(st)}
                     />
@@ -1708,9 +1718,9 @@ function App() {
       {screen === "final" && chosen && (
         <Fade key="final">
           <div className="reveal">
-            <Ticket st={chosen} timeText={maxTime(chosen) != null ? timeSummary(chosen) : null} wishes={fromShare ? {} : shownWishes} />
+            <Ticket st={chosen} timeText={(!omakase && maxTime(chosen) != null) ? timeSummary(chosen) : null} wishes={fromShare ? {} : shownWishes} />
           </div>
-          {bases.filter(Boolean).length > 1 && (
+          {!omakase && bases.filter(Boolean).length > 1 && (
             <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", marginTop: 12 }}>
               <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 6 }}>各出発駅からの所要時間</div>
               <div style={{ display: "grid", gap: 6 }}>
