@@ -20,7 +20,7 @@ PATH = os.path.join(ROOT, "data", "stations.json")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from curated_features import CURATED, SCORE_FIXES, PROFILES, KEYS, BASE
-from curated_core import CORE, FIVES, FOURS
+from curated_core import CORE, FIVES, FOURS, PRIORITY_FIX
 
 
 def build_scores(profile, over):
@@ -78,7 +78,14 @@ def main():
                 used.add(k)
                 break
 
-    print(f"中核駅(pr=1,2)を書き直し: {cored} 駅")
+    # ①.5 種別(searchPriority)の分類漏れを補正。CORE適用より先に効かせる必要は無いが、
+    #      pr が変わると CORE の対象範囲も変わるため、ここで反映する。
+    prfix = 0
+    for st in data:
+        if st["name"] in PRIORITY_FIX and st["searchPriority"] != PRIORITY_FIX[st["name"]]:
+            st["searchPriority"] = PRIORITY_FIX[st["name"]]
+            prfix += 1
+    print(f"中核駅(pr=1,2)を書き直し: {cored} 駅 / 種別の分類を補正: {prfix} 駅")
 
     # ④ 「5」の較正：長押し(★最優先)で残るのは代表格だけにする。
     #    ホワイトリストに載っていれば 5 に、載っていない 5 は 4 に落とす。
