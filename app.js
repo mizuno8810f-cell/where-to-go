@@ -287,6 +287,25 @@ const WISH_GROUPS = [
 const WISH_LABEL = {};
 WISH_GROUPS.forEach((g) => g.items.forEach(([k, l]) => { WISH_LABEL[k] = l.replace(/^[^\s]+\s/, ""); }));
 
+// 候補カードに出す「この街の強み」タグ用の短いラベル
+const WISH_SHORT = {
+  drinking: "🍺 飲み", gourmet: "🍽 ご飯", cafe: "☕ カフェ", shopping: "🛍 買い物",
+  entertainment: "🎮 遊ぶ", nature: "🌿 自然", walk: "🚶 ぶらぶら", scenery: "🌆 景色",
+  nightView: "🌃 夜景", relax: "😴 まったり", active: "🏃 アクティブ", romantic: "💕 デート",
+  unique: "💎 変わってる", rainyDay: "☔ 雨でも", indoor: "🏠 屋内", outdoor: "☀️ 外遊び",
+  lateNight: "🌙 夜から", fullDay: "🗓 一日", shortStay: "⏱ 少しだけ",
+};
+// 「雨でも」と「屋内」、「一日」と「少しだけ」は重複しやすいので代表だけ出す
+const TAG_SKIP = ["indoor", "fullDay", "shortStay"];
+// その駅が何に強いかを上位3つまで返す（5=◎ / 4=○）
+function strengthTags(st, max = 3) {
+  return Object.keys(WISH_SHORT)
+    .filter((k) => TAG_SKIP.indexOf(k) < 0 && (st.scores[k] || 0) >= 4)
+    .sort((a, b) => (st.scores[b] || 0) - (st.scores[a] || 0))
+    .slice(0, max)
+    .map((k) => ({ k, label: WISH_SHORT[k], top: (st.scores[k] || 0) >= 5 }));
+}
+
 // 結果カードで見せる相性（選んだ希望のうちスコアの高いもの）
 function matchTags(st, wishes) {
   const label = {};
@@ -626,6 +645,26 @@ function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude,
           {st.dateFeature}
         </div>
       )}
+      {/* この街が何に強いか。条件を選ばなかった人でも中身を判断できるように出す */}
+      {(() => {
+        const tags = strengthTags(st);
+        if (!tags.length) return null;
+        return (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+            {tags.map((t) => (
+              <span key={t.k} style={{
+                fontFamily: SANS, fontSize: 12, fontWeight: 700, borderRadius: 999,
+                padding: "4px 9px", whiteSpace: "nowrap",
+                background: t.top ? C.signal : "rgba(14,140,129,.10)",
+                color: t.top ? "#fff" : C.signalDim,
+                border: `1px solid ${t.top ? C.signal : "rgba(14,140,129,.28)"}`,
+              }}>
+                {t.label}{t.top ? " ◎" : ""}
+              </span>
+            ))}
+          </div>
+        );
+      })()}
       {hasActions && (
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           {onToggleExclude && (
