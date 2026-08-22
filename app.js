@@ -99,7 +99,7 @@ const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 const isRecent = (st) => st.lastVisit && NOW - Date.parse(st.lastVisit) < RECENT_MS;
 
 // 絶対条件：searchPriority と 所要時間（＋訪問履歴）で候補から除外する
-// priorityMode: standard=定番(P1) / hidden=穴場も(P1,2) / adventure=超冒険(P1,2,3)
+// priorityMode: standard=有名な所だけ(P1) / hidden=あまり知られてない所も(P1,2) / adventure=どんな駅でもOK(P1,2,3)
 const PRIORITY_SET = { standard: [1], hidden: [1, 2], adventure: [1, 2, 3] };
 // timeFilters: [{ map, min, max }] 各出発駅ごとの所要時間マップと許容範囲
 function applyHard(list, hf, timeFilters, wishes) {
@@ -1228,10 +1228,10 @@ function App() {
     // ② 種別を広げる
     if (hf.priority !== "adventure") {
       const next = hf.priority === "standard" ? "hidden" : "adventure";
-      const nlabel = next === "hidden" ? "穴場もいれる" : "超冒険";
+      const nlabel = next === "hidden" ? "あまり知られてない所も" : "どんな駅でもOK";
       out.push({
         key: "prio",
-        label: `「${nlabel}」まで候補に入れる`,
+        label: `「${nlabel}」に広げる`,
         n: countWith({ ...hf, priority: next }, hardWishes),
         apply: () => setHf((c) => ({ ...c, priority: next })),
       });
@@ -1709,15 +1709,26 @@ function App() {
             </div>
           )}
 
-          <FieldLabel eyebrow="RANGE" title="どんな所まで候補に入れる？" />
+          <FieldLabel eyebrow="RANGE" title="どんなところまで候補に入れる？" />
           <Row>
-            <Chip active={hf.priority === "standard"} onClick={() => setHf({ ...hf, priority: "standard" })}>定番だけ</Chip>
-            <Chip active={hf.priority === "hidden"} onClick={() => setHf({ ...hf, priority: "hidden" })}>穴場もいれる</Chip>
-            <Chip active={hf.priority === "adventure"} onClick={() => setHf({ ...hf, priority: "adventure" })}>超冒険</Chip>
+            <Chip active={hf.priority === "standard"} onClick={() => setHf({ ...hf, priority: "standard" })}>有名な所だけ</Chip>
+            <Chip active={hf.priority === "hidden"} onClick={() => setHf({ ...hf, priority: "hidden" })}>あまり知られてない所も</Chip>
+            <Chip active={hf.priority === "adventure"} onClick={() => setHf({ ...hf, priority: "adventure" })}>どんな駅でもOK</Chip>
           </Row>
-          <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: "-8px 0 18px", lineHeight: 1.6 }}>
-            定番＝有名でハズさない所／穴場＝ちょっとマイナー／超冒険＝かなりマニアックな所まで
-          </p>
+          <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px", margin: "-8px 0 18px" }}>
+            <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.ink, margin: 0, lineHeight: 1.65 }}>
+              {hf.priority === "standard" ? (
+                <>新宿・鎌倉・お台場など、<b>名前を聞けば分かる場所</b>だけ。<br />
+                  <span style={{ color: C.muted }}>ハズしにくいので、迷ったらこれ。</span></>
+              ) : hf.priority === "hidden" ? (
+                <>上の有名どころに加えて、<b>地元では人気の街</b>も入ります。<br />
+                  <span style={{ color: C.muted }}>知らない街に出会いたいときに。</span></>
+              ) : (
+                <>住宅街もふくめた<b>全部の駅</b>から選びます。<br />
+                  <span style={{ color: C.muted }}>特に何もない駅も出ます。当たり外れごと楽しみたい人向け。</span></>
+              )}
+            </p>
+          </div>
 
           <FieldLabel eyebrow="HISTORY" title="前に行った場所は？" />
           <Row>
