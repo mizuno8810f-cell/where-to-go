@@ -232,14 +232,6 @@ function softWeight(st, softWishes) {
 function historyWeight(st, hf) {
   return hf.history === "prefer" ? Math.pow(0.7, st.visitCount || 0) : 1;
 }
-// 王道度の効かせ方：種別ごとに変える。
-//   定番だけ = 王道が濃く出る / 穴場も = ゆるく王道寄り / 超冒険 = 完全に均等
-const ICONIC_POWER = { standard: 2, hidden: 1, adventure: 0 };
-function iconicWeight(st, hf) {
-  const p = ICONIC_POWER[hf.priority] || 0;
-  if (!p) return 1;
-  return Math.pow(st.iconic || 1, p);
-}
 const prefersReduce = () =>
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1398,7 +1390,7 @@ function App() {
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
     setOmakase(false);
-    setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf) * iconicWeight(s, hf)));
+    setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
   // おまかせ：出発駅・距離・条件を無視して、全駅からランダムに10件
@@ -1413,7 +1405,7 @@ function App() {
 
   const reroll = () => {
     if (rerollUsed) return;
-    setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf) * iconicWeight(s, hf)));
+    setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
     setExcluded([]); setChosen(null); setRerollUsed(true); setScreen("pick10");
   };
 
@@ -2497,7 +2489,6 @@ async function boot() {
       name: s.name,
       area: s.area,
       pr: s.searchPriority,
-      iconic: s.iconic || 1,
       dateFeature: s.dateFeature,
       scores: s.scores,
       hotpepperUrl: (s.hotpepperUrl && String(s.hotpepperUrl).indexOf("http") === 0) ? s.hotpepperUrl : "https://www.hotpepper.jp",
