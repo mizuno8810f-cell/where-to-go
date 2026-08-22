@@ -20,7 +20,7 @@ PATH = os.path.join(ROOT, "data", "stations.json")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from curated_features import CURATED, SCORE_FIXES, PROFILES, KEYS, BASE
-from curated_core import CORE
+from curated_core import CORE, FIVES, FOURS
 
 
 def build_scores(profile, over):
@@ -79,6 +79,39 @@ def main():
                 break
 
     print(f"中核駅(pr=1,2)を書き直し: {cored} 駅")
+
+    # ④ 「5」の較正：長押し(★最優先)で残るのは代表格だけにする。
+    #    ホワイトリストに載っていれば 5 に、載っていない 5 は 4 に落とす。
+    promoted = demoted = 0
+    for st in data:
+        for mood, names in FIVES.items():
+            cur = st["scores"].get(mood, 0)
+            if st["name"] in names:
+                if cur < 5:
+                    st["scores"][mood] = 5
+                    promoted += 1
+            elif cur >= 5:
+                st["scores"][mood] = 4
+                demoted += 1
+    # ⑤ 「4」の下限保証：その気分で十分成立する駅は最低4にする
+    floored = 0
+    for st in data:
+        for mood, names in FOURS.items():
+            if st["name"] in names and st["scores"].get(mood, 0) < 4:
+                st["scores"][mood] = 4
+                floored += 1
+    print(f"5に格上げ: {promoted} 件 / 5→4に格下げ: {demoted} 件 / 4に底上げ: {floored} 件")
+
+    allnames_f = {s["name"] for s in data}
+    for mood, names in FOURS.items():
+        for n in names - allnames_f:
+            unmatched.append(f"FOURS[{mood}] の {n}")
+
+    # ホワイトリストにあるのにデータに無い駅名を警告
+    allnames = {s["name"] for s in data}
+    for mood, names in FIVES.items():
+        for n in names - allnames:
+            unmatched.append(f"FIVES[{mood}] の {n}")
 
     for k in list(CORE) + list(CURATED) + list(SCORE_FIXES):
         if k not in used:
