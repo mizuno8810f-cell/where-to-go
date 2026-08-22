@@ -20,6 +20,7 @@ PATH = os.path.join(ROOT, "data", "stations.json")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from curated_features import CURATED, SCORE_FIXES, PROFILES, KEYS, BASE
+from curated_core import CORE
 
 
 def build_scores(profile, over):
@@ -45,12 +46,21 @@ def main():
     filled, rescored, fixed, unmatched = 0, 0, 0, []
     used = set()
 
+    cored = 0
     for st in data:
+        # ① 中核駅(pr=1,2)は CORE で特徴文もスコアも書き直す
+        if st["name"] in CORE:
+            feature, scores = CORE[st["name"]]
+            st["dateFeature"] = feature
+            st["scores"] = dict(scores)
+            cored += 1
+            used.add(st["name"])
+            continue
+
+        # ② それ以外は、プレースホルダ状態(pr=3)の駅だけ補完する
         for k in key_variants(st):
             if k in CURATED:
                 used.add(k)
-                # 既に特徴が入っている駅(pr=1,2)は元データを尊重し、何も触らない。
-                # 補完はプレースホルダ状態(pr=3)の駅にだけ行う。
                 if (st.get("dateFeature") or "").strip():
                     break
                 feature, profile, over = CURATED[k]
@@ -60,7 +70,7 @@ def main():
                 rescored += 1
                 break
 
-        # 既存記述とスコアの矛盾を補正（記述は正しい前提でスコアを引き上げる）
+        # ③ CORE の対象外で、記述とスコアが矛盾しているものを補正
         for k in key_variants(st):
             if k in SCORE_FIXES:
                 st["scores"].update(SCORE_FIXES[k])
@@ -68,7 +78,9 @@ def main():
                 used.add(k)
                 break
 
-    for k in list(CURATED) + list(SCORE_FIXES):
+    print(f"中核駅(pr=1,2)を書き直し: {cored} 駅")
+
+    for k in list(CORE) + list(CURATED) + list(SCORE_FIXES):
         if k not in used:
             unmatched.append(k)
 
