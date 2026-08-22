@@ -150,19 +150,23 @@ function pickWeighted(pool, wishes) {
   return pool[pool.length - 1];
 }
 
-// 同じ駅名（例：路線違いの「浅草」）を1件にまとめる。rank(小さいほど優先)で代表を選ぶ。
+// 同じ駅（例：路線違いの「浅草」）を1件にまとめる。rank(小さいほど優先)で代表を選ぶ。
+// キーは「駅名＋エリア」。同名でもエリアが違えば別の場所として残す（例：入谷=東京/神奈川）。
 function dedupeByName(list, rank) {
+  const keyOf = (st) => st.name + "" + (st.area || "");
   const best = new Map();
   for (const st of list) {
-    const cur = best.get(st.name);
-    if (!cur || rank(st) < rank(cur)) best.set(st.name, st);
+    const k = keyOf(st);
+    const cur = best.get(k);
+    if (!cur || rank(st) < rank(cur)) best.set(k, st);
   }
   const seen = new Set();
   const out = [];
   for (const st of list) {
-    if (seen.has(st.name)) continue;
-    seen.add(st.name);
-    out.push(best.get(st.name));
+    const k = keyOf(st);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(best.get(k));
   }
   return out;
 }
