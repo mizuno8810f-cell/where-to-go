@@ -354,8 +354,9 @@ function cautionNotes(st, hops, withStay) {
     out.push("この駅は情報がほとんどありません。何があるかは行ってみてのお楽しみです。");
   }
   if (hops != null && hops >= 10) {
-    // 路線データに「路線名」が無いため乗換回数は出せない。経由駅数から「遠い＝乗換が要る」ことだけ伝える。
-    out.push("出発駅からかなり離れています。表示の時間は駅間の乗車時間を足しただけで、乗換・待ち時間・急行の有無を考えていません。実際はもっとかかるので、経路は事前に確認してください。");
+    // 表示時間は「各駅の乗車時間の合計」なので、急行を使えば短く、乗換が多ければ長くなる。
+    // 路線データに路線名が無く乗換回数は出せないため、ズレる可能性だけを伝える。
+    out.push("出発駅から10駅以上離れています。表示の時間は各駅の乗車時間を足した概算で、急行や乗換を考えていません。実際の所要時間は経路によって大きく変わるので、出発前に調べてください。");
   }
   const kw = SEASON_KW.find((k) => text.indexOf(k) >= 0);
   if (kw) out.push(`「${kw}」が見どころの街です。時期を外すと静かかもしれません。`);
@@ -365,18 +366,27 @@ function cautionNotes(st, hops, withStay) {
   if (withStay && (st.scores.fullDay || 0) <= 2 && (st.scores.shortStay || 0) >= 4) {
     out.push("数時間〜半日くらいが目安の街です。丸一日いる予定だと持て余すかもしれません。");
   }
-  return out.slice(0, 2);
+  // 一覧は読み飛ばされないよう2件まで。決める直前のきっぷでは全部見せる。
+  return withStay ? out : out.slice(0, 2);
 }
 function CautionNote({ st, hops, withStay }) {
   const notes = cautionNotes(st, hops, withStay);
   if (!notes.length) return null;
+  // きっぷ（決定後）は行くかどうかの最終判断なので、少し目立たせる
   return (
-    <div style={{ marginTop: 10, display: "grid", gap: 4 }}>
+    <div style={{ marginTop: withStay ? 14 : 10, display: "grid", gap: 4, textAlign: "left" }}>
+      {withStay && (
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: 2, color: C.amber, fontWeight: 700 }}>
+          行く前に
+        </div>
+      )}
       {notes.map((n, i) => (
         <div key={i} style={{
-          fontFamily: SANS, fontSize: 11.5, lineHeight: 1.5, color: C.muted,
-          background: "rgba(23,38,58,.04)", borderRadius: 8, padding: "6px 9px",
-          borderLeft: `3px solid rgba(23,38,58,.16)`,
+          fontFamily: SANS, fontSize: 11.5, lineHeight: 1.5,
+          color: withStay ? C.inkSoft : C.muted,
+          background: withStay ? "rgba(226,154,59,.09)" : "rgba(23,38,58,.04)",
+          borderRadius: 8, padding: "6px 9px",
+          borderLeft: `3px solid ${withStay ? "rgba(226,154,59,.5)" : "rgba(23,38,58,.16)"}`,
         }}>
           ※ {n}
         </div>
