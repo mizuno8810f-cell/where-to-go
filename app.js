@@ -999,7 +999,6 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
-  const [installOpen, setInstallOpen] = useState(false); // ホーム画面に追加モーダル
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
   const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
@@ -1332,12 +1331,6 @@ function App() {
               desc="行った場所を記録して、回数を管理します。"
               onClick={() => { setMenuOpen(false); setScreen("manage"); }}
             />
-            <div style={{ height: 10 }} />
-            <MenuItem
-              icon="📲" title="ホーム画面に追加"
-              desc="スマホのホーム画面にアプリとして置けます。"
-              onClick={() => { setMenuOpen(false); setInstallOpen(true); }}
-            />
           </div>
         </div>
       )}
@@ -1404,46 +1397,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* ホーム画面に追加モーダル */}
-      {installOpen && (
-        <div style={modalWrap} onClick={() => setInstallOpen(false)}>
-          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>ホーム画面に追加</div>
-              <button onClick={() => setInstallOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
-            </div>
-            <p style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, margin: "0 0 14px", lineHeight: 1.7 }}>
-              ホーム画面に置くと、次からアイコンをタップするだけで<b>全画面のアプリのように</b>開けます。
-            </p>
-
-            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 8 }}>iPhone（Safari）</div>
-            <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
-              {[
-                ["1", <span key="s">下の <b>共有ボタン</b>（□に↑）をタップ</span>],
-                ["2", <span key="s">メニューを下にたどって <b>「ホーム画面に追加」</b> をタップ</span>],
-                ["3", <span key="s">右上の <b>「追加」</b> をタップで完了！</span>],
-              ].map(([no, t]) => (
-                <div key={no} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px" }}>
-                  <span style={{ flex: "0 0 auto", width: 22, height: 22, borderRadius: "50%", background: C.signal, color: "#fff", fontFamily: MONO, fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>{no}</span>
-                  <span style={{ flex: 1, fontFamily: SANS, fontSize: 13.5, color: C.ink, lineHeight: 1.55 }}>{t}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 8 }}>Android（Chrome）</div>
-            <p style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.7 }}>
-              右上の <b>メニュー（⋮）</b> →「<b>ホーム画面に追加</b>」または「<b>アプリをインストール</b>」をタップ。
-            </p>
-
-            <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: "0 0 12px", lineHeight: 1.6 }}>
-              ※iPhoneは仕様上、アプリ内のボタンから自動で追加することができません。お手数ですが上の手順でお願いします。
-            </p>
-            <Btn onClick={() => setInstallOpen(false)}>とじる</Btn>
-          </div>
-        </div>
-      )}
-
       {screen === "title" && (
         <Fade key="title">
           <div style={{ minHeight: "76vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 6px" }}>
