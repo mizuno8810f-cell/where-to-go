@@ -275,6 +275,10 @@ const WISH_GROUPS = [
   { title: "今日の気分", items: [["relax", "😴 まったりしたい"], ["active", "🏃 アクティブに"], ["romantic", "💕 デートっぽく"], ["unique", "💎 ちょっと変わった"]] },
   { title: "今日の状況", items: [["rainyDay", "☔ 雨でも楽しみたい"], ["indoor", "🏠 屋内がいい"], ["outdoor", "☀️ 外で遊びたい"], ["lateNight", "🌙 夜から遊びたい"], ["fullDay", "🗓 一日遊びたい"], ["shortStay", "⏱ 少しだけ"]] },
 ];
+// 気分キー → 表示名（絵文字を除いたもの）。緩和ヒントなどで使う。
+const WISH_LABEL = {};
+WISH_GROUPS.forEach((g) => g.items.forEach(([k, l]) => { WISH_LABEL[k] = l.replace(/^[^\s]+\s/, ""); }));
+
 // 結果カードで見せる相性（選んだ希望のうちスコアの高いもの）
 function matchTags(st, wishes) {
   const label = {};
@@ -1153,6 +1157,92 @@ function App() {
   }, [stations, hf, timeFilters, hardWishes]);
   const count = candidates.length;
   const hardWishKeyCount = Object.keys(hardWishes).length;
+
+  // 候補が少ない/0件のとき、「どの条件をどうゆるめると何件になるか」を計算して提案する。
+  // 実際に効く順に並べ、押すとその条件に切り替わる。
+  const relaxSuggestions = useMemo(() => {
+    if (count >= 10) return [];
+    const countWith = (nextHf, nextWishes) => {
+      const tfs = bases.map((b, i) => {
+        if (!b) return null;
+        const r = nextHf.timePerBase
+          ? (nextHf.timeRanges[b] || { min: nextHf.timeMin, max: nextHf.timeMax })
+          : { min: nextHf.timeMin, max: nextHf.timeMax };
+        return { map: timeMaps[i] || {}, min: r.min, max: r.max };
+      }).filter(Boolean);
+      const list = applyHard(stations, nextHf, tfs, nextWishes);
+      return dedupeByName(list, () => 0).length;
+    };
+    const out = [];
+
+    // ① 所要時間を広げる
+    if (hf.timeOn && hf.timeMax < 120) {
+      const nextMax = hf.timeMax + 30 >= 120 ? 120 : hf.timeMax + 30;
+      const label = nextMax >= 120 ? "上限なし" : `${nextMax}分`;
+      out.push({
+        key: "time",
+        label: `所要時間を${label}まで広げる`,
+        n: countWith({ ...hf, timeMax: nextMax, timePerBase: false }, hardWishes),
+        apply: () => setHf((c) => ({ ...c, timeMax: nextMax, timePerBase: false })),
+      });
+    }
+    // ② 種別を広げる
+    if (hf.priority !== "adventure") {
+      const next = hf.priority === "standard" ? "hidden" : "adventure";
+      const nlabel = next === "hidden" ? "穴場もいれる" : "超冒険";
+      out.push({
+        key: "prio",
+        label: `「${nlabel}」まで候補に入れる`,
+        n: countWith({ ...hf, priority: next }, hardWishes),
+        apply: () => setHf((c) => ({ ...c, priority: next })),
+      });
+    }
+    // ③ ★最優先をふつうの条件に戻す
+    const tops = Object.keys(hardWishes).filter((k) => hardWishes[k] === "top");
+    if (tops.length) {
+      const soft = { ...hardWishes };
+      tops.forEach((k) => { soft[k] = "on"; });
+      out.push({
+        key: "untop",
+        label: "★最優先をふつうの条件に戻す",
+        n: countWith(hf, soft),
+        apply: () => setHardWishes(soft),
+      });
+    }
+    // ④ 気分を1つ外す（複数選んでいるとき）
+    const keys = Object.keys(hardWishes);
+    if (keys.length > 1) {
+      keys.forEach((k) => {
+        const rest = { ...hardWishes };
+        delete rest[k];
+        out.push({
+          key: "drop-" + k,
+          label: `「${WISH_LABEL[k] || k}」を条件から外す`,
+          n: countWith(hf, rest),
+          apply: () => setHardWishes(rest),
+        });
+      });
+    } else if (keys.length === 1) {
+      const k = keys[0];
+      out.push({
+        key: "drop-" + k,
+        label: `「${WISH_LABEL[k] || k}」を条件から外す`,
+        n: countWith(hf, {}),
+        apply: () => setHardWishes({}),
+      });
+    }
+    // ⑤ 時間で絞るのをやめる
+    if (hf.timeOn && hf.timeMax < 120) {
+      out.push({
+        key: "notime",
+        label: "所要時間で絞るのをやめる",
+        n: countWith({ ...hf, timeOn: false }, hardWishes),
+        apply: () => setHf((c) => ({ ...c, timeOn: false })),
+      });
+    }
+    // 実際に増えるものだけ、多い順に最大3件
+    return out.filter((o) => o.n > count).sort((a, b) => b.n - a.n).slice(0, 3);
+  }, [count, stations, hf, hardWishes, bases, timeMaps]);
   // 全駅（同名は1件に集約）。おまかせ＝出発駅/距離を無視して全駅から。
   const allStations = useMemo(() => dedupeByName(stations, () => 0), [stations]);
 
@@ -1627,7 +1717,42 @@ function App() {
 
           <div style={{ height: 26 }} />
           <Btn onClick={search10} disabled={count === 0}>この条件で候補を出す →</Btn>
-          {count === 0 && (
+
+          {/* 候補が少ない/0件のとき、実際に効く緩和策を提案する */}
+          {relaxSuggestions.length > 0 && (
+            <div className="fade" style={{
+              marginTop: 14, background: count === 0 ? "rgba(192,85,62,.06)" : C.paperCard,
+              border: `1.5px solid ${count === 0 ? C.danger : C.line}`, borderRadius: 16, padding: "14px 15px",
+            }}>
+              <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 800, color: count === 0 ? C.danger : C.ink, marginBottom: 4 }}>
+                {count === 0 ? "条件に合う場所がありません" : `候補が${count}件しかありません`}
+              </div>
+              <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.6 }}>
+                下をタップすると、その条件にゆるめられます。
+              </p>
+              <div style={{ display: "grid", gap: 8 }}>
+                {relaxSuggestions.map((s) => (
+                  <button
+                    key={s.key}
+                    onClick={() => { if (window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } s.apply(); }}
+                    style={{
+                      width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${C.signal}`,
+                      borderRadius: 12, padding: "11px 13px", cursor: "pointer", display: "flex",
+                      alignItems: "center", justifyContent: "space-between", gap: 10,
+                    }}
+                  >
+                    <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.ink, flex: 1 }}>
+                      {s.label}
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 800, color: C.signal, flex: "0 0 auto" }}>
+                      {s.n}件 →
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {count === 0 && relaxSuggestions.length === 0 && (
             <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
               条件に合う場所がありません。条件を少しゆるめてください。
             </p>
