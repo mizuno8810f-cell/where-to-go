@@ -249,8 +249,10 @@ function setCookie(name, value, days) {
 const BASE_COOKIE = "dokoiku_base";
 
 // 出発駅からの所要時間（隣接グラフのダイクストラ・概算／乗換ペナルティなし）
+// dist = 乗車時間の合計（分）, hops = 経由する駅数。hops は「表示時間と実際のズレ」の目安に使う。
 function shortestTimes(sourceId) {
   const dist = { [sourceId]: 0 };
+  const hops = { [sourceId]: 0 };
   const done = {};
   const pq = [[0, sourceId]];
   while (pq.length) {
@@ -262,10 +264,10 @@ function shortestTimes(sourceId) {
     const ns = ADJ[u] || [];
     for (const [v, w] of ns) {
       const nd = d + w;
-      if (dist[v] == null || nd < dist[v]) { dist[v] = nd; pq.push([nd, v]); }
+      if (dist[v] == null || nd < dist[v]) { dist[v] = nd; hops[v] = (hops[u] || 0) + 1; pq.push([nd, v]); }
     }
   }
-  return dist;
+  return { dist, hops };
 }
 
 // 希望条件のUI定義（グループ・絵文字・ラベル・dateScoresキー）
@@ -296,6 +298,91 @@ function strengthTags(st, max = 3) {
     .sort((a, b) => (st.scores[b] || 0) - (st.scores[a] || 0))
     .slice(0, max)
     .map((k) => ({ k, label: WISH_SHORT[k], top: (st.scores[k] || 0) >= 5 }));
+}
+
+/* ── 行ってみて「思ってたのと違った」を防ぐための表示 ────────────────────
+   ① 設備アイコン行：どのカードにも同じ4項目を必ず出し、「ある/ない」を明示する。
+      強みタグは "あるもの" しか出ないので、「無いもの」はここでしか分からない。
+   ② 注意書き：アイコンでは分からない懸念だけを、必要なときだけ1行で添える。
+   ─────────────────────────────────────────────────────── */
+const FACILITY = [
+  { k: "food", icon: "🍽", label: "ごはん", keys: ["gourmet", "drinking", "cafe"] },
+  { k: "shop", icon: "🛍", label: "買い物", keys: ["shopping"] },
+  // 夜は「遅くまで店がある」だけでなく「夜景が目的地になる」街も○にする
+  { k: "night", icon: "🌙", label: "夜", keys: ["lateNight", "nightView"] },
+  { k: "rain", icon: "☔", label: "雨", keys: ["rainyDay", "indoor"] },
+];
+function hasFacility(st, f) {
+  return f.keys.some((k) => (st.scores[k] || 0) >= 4);
+}
+function FacilityRow({ st, compact }) {
+  // 特徴が未登録の駅は全部✕になってしまい誤解を招くので出さない（注意書き側で伝える）
+  if (!(st.dateFeature || "").trim()) return null;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginTop: compact ? 12 : 10 }}>
+      {FACILITY.map((f) => {
+        const ok = hasFacility(st, f);
+        return (
+          <div key={f.k} style={{
+            textAlign: "center", borderRadius: 10, padding: "5px 2px 4px",
+            background: ok ? "rgba(14,140,129,.10)" : "rgba(23,38,58,.05)",
+            border: `1px solid ${ok ? "rgba(14,140,129,.28)" : "rgba(23,38,58,.10)"}`,
+          }}>
+            <div style={{ fontSize: 14, lineHeight: 1.3, filter: ok ? "none" : "grayscale(1)", opacity: ok ? 1 : 0.45 }}>{f.icon}</div>
+            <div style={{
+              fontFamily: SANS, fontSize: 10.5, fontWeight: 700, marginTop: 1,
+              color: ok ? C.signalDim : C.muted, opacity: ok ? 1 : 0.75,
+            }}>
+              {f.label}{ok ? "○" : "✕"}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 季節ものの街かどうかを特徴文から判定する（時期を外すと空振りしやすい）
+const SEASON_KW = ["桜", "紫陽花", "あじさい", "花火", "紅葉", "海水浴", "イルミネーション", "梅林", "ひまわり", "菜の花", "初詣", "チューリップ", "藤棚"];
+// アイコン行では伝わらない懸念だけを文章にする。多すぎると読まれないので2件まで。
+// 一覧では「外す判断に使えるもの」だけに絞り、滞在時間の目安は決定後のきっぷでだけ出す
+// （半日向けの街は多く、一覧に並べると全部に同じ注意が付いて読まれなくなるため）。
+function cautionNotes(st, hops, withStay) {
+  const out = [];
+  const text = (st.dateFeature || "").trim();
+  if (!text) {
+    out.push("この駅は情報がほとんどありません。何があるかは行ってみてのお楽しみです。");
+  }
+  if (hops != null && hops >= 10) {
+    // 路線データに「路線名」が無いため乗換回数は出せない。経由駅数から「遠い＝乗換が要る」ことだけ伝える。
+    out.push("出発駅からかなり離れています。表示の時間は駅間の乗車時間を足しただけで、乗換・待ち時間・急行の有無を考えていません。実際はもっとかかるので、経路は事前に確認してください。");
+  }
+  const kw = SEASON_KW.find((k) => text.indexOf(k) >= 0);
+  if (kw) out.push(`「${kw}」が見どころの街です。時期を外すと静かかもしれません。`);
+  if (text && strengthTags(st, 5).length <= 1) {
+    out.push("目立つ見どころが少なめです。目的がはっきりしているとき向きです。");
+  }
+  if (withStay && (st.scores.fullDay || 0) <= 2 && (st.scores.shortStay || 0) >= 4) {
+    out.push("数時間〜半日くらいが目安の街です。丸一日いる予定だと持て余すかもしれません。");
+  }
+  return out.slice(0, 2);
+}
+function CautionNote({ st, hops, withStay }) {
+  const notes = cautionNotes(st, hops, withStay);
+  if (!notes.length) return null;
+  return (
+    <div style={{ marginTop: 10, display: "grid", gap: 4 }}>
+      {notes.map((n, i) => (
+        <div key={i} style={{
+          fontFamily: SANS, fontSize: 11.5, lineHeight: 1.5, color: C.muted,
+          background: "rgba(23,38,58,.04)", borderRadius: 8, padding: "6px 9px",
+          borderLeft: `3px solid rgba(23,38,58,.16)`,
+        }}>
+          ※ {n}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // 結果カードで見せる相性（選んだ希望のうちスコアの高いもの）
@@ -607,7 +694,7 @@ function Board({ count, note }) {
 }
 
 /* 候補カード */
-function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude, timeText }) {
+function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude, timeText, hops }) {
   const hasActions = !!onToggleExclude;
   const faded = dim || excludedMark;
   return (
@@ -657,6 +744,10 @@ function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude,
           </div>
         );
       })()}
+      {/* 「無いもの」を必ず見せる固定アイコン行 */}
+      <FacilityRow st={st} />
+      {/* アイコンでは分からない懸念だけ文章で補う */}
+      <CautionNote st={st} hops={hops} />
       {hasActions && (
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           {onToggleExclude && (
@@ -748,7 +839,7 @@ function Reveal({ names, targetName, onDone }) {
 }
 
 /* きっぷ（結果） */
-function Ticket({ st, timeText, wishes = [] }) {
+function Ticket({ st, timeText, wishes = [], hops }) {
   const tags = matchTags(st, wishes);
   const prLabel = st.pr === 1 ? "王道" : st.pr === 2 ? "穴場" : "冒険";
   return (
@@ -784,6 +875,8 @@ function Ticket({ st, timeText, wishes = [] }) {
               ))}
             </div>
           )}
+          <FacilityRow st={st} compact />
+          <CautionNote st={st} hops={hops} withStay />
         </div>
         {/* 破線＋パンチ穴 */}
         <div style={{ position: "relative", height: 24, margin: "12px 0" }}>
@@ -1158,7 +1251,19 @@ function App() {
   const removeBase = (i) => setBasesAndSave(bases.filter((_, j) => j !== i));
 
   // 各出発駅からの所要時間マップ（出発駅が変わった時だけ再計算）
-  const timeMaps = useMemo(() => bases.map((b) => (b ? shortestTimes(b) : {})), [bases]);
+  const routeMaps = useMemo(() => bases.map((b) => (b ? shortestTimes(b) : { dist: {}, hops: {} })), [bases]);
+  const timeMaps = useMemo(() => routeMaps.map((r) => r.dist), [routeMaps]);
+  // 経由駅数（最も多く経由する出発駅のもの）。表示時間とのズレを注意書きで伝えるのに使う。
+  const maxHops = (st) => {
+    let m = null;
+    for (let i = 0; i < bases.length; i++) {
+      if (!bases[i]) continue;
+      const h = routeMaps[i].hops[st.id];
+      if (h == null) return null;
+      if (m == null || h > m) m = h;
+    }
+    return m;
+  };
   const baseNames = useMemo(() => bases.map((b) => { const s = stations.find((x) => x.id === b); return s ? s.name : ""; }), [stations, bases]);
   // 候補駅への「各出発駅からの所要時間」リスト
   const stTimes = (st) => bases.map((b, i) => ({ id: b, name: baseNames[i] || "出発駅", t: b && timeMaps[i] ? timeMaps[i][st.id] : null }));
@@ -1824,8 +1929,17 @@ function App() {
             </div>
           ) : (
             <>
-              <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginBottom: 10 }}>
+              <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginBottom: 8 }}>
                 のこり {remaining} 件
+              </div>
+              {/* 行ってから気づく「無いもの」を先に伝えるための凡例 */}
+              <div style={{
+                fontFamily: SANS, fontSize: 11.5, lineHeight: 1.6, color: C.muted,
+                background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 10,
+                padding: "8px 11px", marginBottom: 12,
+              }}>
+                各カードの <b style={{ color: C.signalDim }}>🍽 ごはん / 🛍 買い物 / 🌙 夜 / ☔ 雨</b> は、その街でそれができるかの目安です。
+                <b>✕ は期待できない</b>という意味なので、行ってから困りそうならここで外してください。
               </div>
               <div style={{ display: "grid", gap: 12 }}>
                 {shown.map((st, i) => (
@@ -1833,6 +1947,7 @@ function App() {
                     <StationCard
                       st={st} index={i}
                       timeText={(!omakase && hf.timeOn) ? timeSummary(st) : null}
+                      hops={omakase ? null : maxHops(st)}
                       excludedMark={excluded.includes(st.id)}
                       onToggleExclude={() => toggleExclude(st)}
                     />
@@ -1897,7 +2012,12 @@ function App() {
       {screen === "final" && chosen && (
         <Fade key="final">
           <div className="reveal">
-            <Ticket st={chosen} timeText={(!omakase && maxTime(chosen) != null) ? timeSummary(chosen) : null} wishes={fromShare ? {} : shownWishes} />
+            <Ticket
+              st={chosen}
+              timeText={(!omakase && maxTime(chosen) != null) ? timeSummary(chosen) : null}
+              wishes={fromShare ? {} : shownWishes}
+              hops={(omakase || fromShare) ? null : maxHops(chosen)}
+            />
           </div>
           {!omakase && bases.filter(Boolean).length > 1 && (
             <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", marginTop: 12 }}>
