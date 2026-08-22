@@ -2,6 +2,10 @@ node_modules
 .DS_Store
 *.local
 
+# Python のバイトコードキャッシュ（tools/ 実行時に生成される）
+__pycache__/
+*.pyc
+
 # Supabase 接続情報（公開用キーでもコミットしない。本番はActionsが生成）
 config.js
 .env
