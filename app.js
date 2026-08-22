@@ -61,6 +61,8 @@ function Logo({ size = 34 }) {
 const SCORE_KEYS = ["drinking","gourmet","cafe","shopping","entertainment","nature","walk","scenery","nightView","indoor","outdoor","rainyDay","active","relax","romantic","unique","lateNight","fullDay","shortStay"];
 const AREA_LABEL = ["東京", "神奈川"];
 const BASE_DEFAULT = "1130208"; // 新宿
+// 条件ゼロ（ホームに戻ると常にこの状態。おまかせはこの状態で候補を出す）
+const ZERO_HF = { priority: "standard", timeOn: false, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "all" };
 
 // 隣接駅グラフは data/adjacency.json から起動時に読み込む
 let ADJ = {};
@@ -995,7 +997,8 @@ function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
-  const [hf, setHf] = useState({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "prefer" });
+  const [hf, setHf] = useState({ ...ZERO_HF, timeRanges: {} });
+  const [fromShare, setFromShare] = useState(false); // 共有リンクで開いた結果を閲覧中か（他人の条件を見せない対策）
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
@@ -1019,21 +1022,12 @@ function App() {
   const [lastChosen, setLastChosen] = useState(null); // 直前にメイン検索で選ばれた駅（ココイッタ登録の初期表示用・resetでは消さない）
   const [chosenHistory, setChosenHistory] = useState([]); // メイン検索で選ばれた駅の履歴（新しい順・重複なし）
 
-  // 初期ロード（駅データ＋出発駅）
+  // 初期ロード（駅データ）。出発駅の復元は「条件を選んで決める」時のみ行う（ホームは条件ゼロ）。
   useEffect(() => {
     (async () => {
       const saved = await loadStations();
       if (saved && Array.isArray(saved) && saved.length) setStations(saved);
-      try {
-        // 出発駅は Cookie から復元（カンマ区切りで複数対応。無ければ旧 window.storage → 既定）
-        const parseBases = (s) => { const a = String(s || "").split(",").map((x) => x.trim()).filter(Boolean); return a.length ? a : null; };
-        const c = getCookie(BASE_COOKIE);
-        if (c && parseBases(c)) setBases(parseBases(c));
-        else if (typeof window !== "undefined" && window.storage) {
-          const b = await window.storage.get("wheretogo:base:v1");
-          if (b && b.value && parseBases(b.value)) setBases(parseBases(b.value));
-        }
-      } catch (e) { /* 既定の出発駅 */ }
+      try { /* 出発駅はここでは復元しない（条件ゼロを保つ） */ } catch (e) { /* noop */ }
       setReady(true);
 
       // クラウド（Supabase）から訪問回数を復元。設定時のみ／失敗しても表示は維持。
@@ -1095,6 +1089,7 @@ function App() {
           }
           setChosen(st);
           setLastChosen(st);
+          setFromShare(true); // 他人の共有結果 → 条件編集画面には入れない（条件を見せない）
           setScreen("final");
         }
       }
@@ -1163,19 +1158,40 @@ function App() {
   });
   const setBaseRange = (baseId, lo, hi) => setHf((cur) => ({ ...cur, timeRanges: { ...cur.timeRanges, [baseId]: { min: lo, max: hi } } }));
 
-  const resetFlow = () => {
-    setHf({ priority: "standard", timeOn: true, timeMin: 0, timeMax: 60, timePerBase: false, timeRanges: {}, history: "prefer" });
-    setHardWishes({}); setSoftWishes([]); setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
-    setLastRecordedId(null); setMenuOpen(false); setSettingsOpen(false);
+  // 条件を丸ごとリセット（ゼロ状態へ）。出発駅も既定に戻す（Cookieは消さない）。
+  const resetConditions = () => {
+    setHf({ ...ZERO_HF, timeRanges: {} });
+    setHardWishes({}); setSoftWishes([]); setBases([BASE_DEFAULT]);
+    setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setMissionList(null); setMissionN(1);
-    setScreen("home");
+    setLastRecordedId(null); setFromShare(false);
   };
+  const clearHash = () => { try { if (typeof history !== "undefined" && history.replaceState && location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* noop */ } };
+
+  // ホームへ戻る＝毎回条件をリセット（他人の共有条件も引き継がない）
   const goHome = () => {
     setMenuOpen(false); setSettingsOpen(false);
-    try { if (typeof history !== "undefined" && history.replaceState && location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* noop */ }
+    clearHash(); resetConditions();
     setScreen("home");
   };
-  const navTo = (s) => { setMenuOpen(false); setSettingsOpen(false); setScreen(s); };
+  const navTo = (s) => {
+    setMenuOpen(false); setSettingsOpen(false);
+    if (s === "home") { goHome(); return; }
+    setScreen(s);
+  };
+
+  // Cookie から出発駅を復元して配列で返す（無ければ既定）
+  const basesFromCookie = () => {
+    const c = getCookie(BASE_COOKIE);
+    const arr = c ? c.split(",").map((x) => x.trim()).filter(Boolean) : [];
+    return arr.length ? arr : [BASE_DEFAULT];
+  };
+  // ホームの「条件を選んで決める」：Cookieの出発駅を復元してSTEP1へ（条件はゼロのまま）
+  const startConditions = () => { setBases(basesFromCookie()); setScreen("step1"); };
+  // 各画面の「条件を変えて選び直す」：いまの条件を保ったままSTEP1へ
+  const backToConditions = () => setScreen("step1");
+  // 共有結果を見ている人が「自分でも試す」：自分の条件（ゼロ＋自分のCookie出発駅）でSTEP1へ
+  const startOwnConditions = () => { resetConditions(); setBases(basesFromCookie()); clearHash(); setScreen("step1"); };
 
   // ミッション（結果画面）：共有・復元のため App が保持
   const [missionN, setMissionN] = useState(1);
@@ -1302,7 +1318,7 @@ function App() {
             >☰</button>
           </div>
         </div>
-        <Breadcrumb screen={screen} onNav={navTo} />
+        <Breadcrumb screen={screen} onNav={navTo} fromShare={fromShare} />
       </div>
       )}
 
@@ -1449,7 +1465,7 @@ function App() {
             いま行けそうな場所の数です。ここから1つに絞り込みます。
           </p>
           <div style={{ height: 20 }} />
-          <Btn onClick={() => setScreen("step1")}>条件を選んで決める →</Btn>
+          <Btn onClick={startConditions}>条件を選んで決める →</Btn>
           <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
             エリア・時間・気分などで絞ってから決める
           </p>
@@ -1638,6 +1654,8 @@ function App() {
               <Btn kind="dark" onClick={goWishes} disabled={remaining === 0}>
                 ここから一つ決める →
               </Btn>
+              <div style={{ height: 10 }} />
+              <Btn kind="ghost" onClick={backToConditions}>🔧 条件を変えて選び直す</Btn>
               {remaining === 0 && (
                 <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
                   全部外しています。どれか戻すか、条件を足して選び直してください。
@@ -1672,6 +1690,8 @@ function App() {
           <Btn onClick={decideWithWishes} disabled={pool.length === 0}>
             {hasMood ? "🎲 この気分で1つ決める！" : "🎲 ランダムで1つ決める！"}
           </Btn>
+          <div style={{ height: 10 }} />
+          <Btn kind="ghost" onClick={backToConditions}>🔧 条件を変えて選び直す</Btn>
           {pool.length === 0 && (
             <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
               候補がありません。前の画面で戻すか、条件をゆるめてください。
@@ -1739,6 +1759,12 @@ function App() {
           <div style={{ height: 22 }} />
           <MissionBox n={missionN} onN={setMissionN} list={missionList} onGenerate={setMissionList} />
           <div style={{ height: 16 }} />
+          {fromShare ? (
+            <Btn kind="ghost" onClick={startOwnConditions}>🔧 自分でも条件を選んで決める →</Btn>
+          ) : (
+            <Btn kind="ghost" onClick={backToConditions}>🔧 条件を変えて選び直す</Btn>
+          )}
+          <div style={{ height: 10 }} />
           <Btn kind="ghost" onClick={goHome}>🏠 ホームに戻る</Btn>
         </Fade>
       )}
@@ -2024,8 +2050,11 @@ const CRUMBS = {
   manage: [["ホーム", "home"], ["ココイッタ", "manage"]],
   stats: [["ホーム", "home"], ["統計", "stats"]],
 };
-function Breadcrumb({ screen, onNav }) {
-  const items = CRUMBS[screen] || [["ホーム", "home"]];
+function Breadcrumb({ screen, onNav, fromShare }) {
+  // 共有結果を見ている人には、共有者の「条件」「候補」を見せない（ホーム › 結果 のみ）
+  const items = (fromShare && (screen === "final" || screen === "reveal"))
+    ? [["ホーム", "home"], ["結果", "final"]]
+    : (CRUMBS[screen] || [["ホーム", "home"]]);
   return (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, marginTop: 10, fontFamily: MONO, fontSize: 11.5 }}>
       {items.map(([label, target], i) => {
