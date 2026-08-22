@@ -1708,7 +1708,7 @@ function App() {
       {screen === "final" && chosen && (
         <Fade key="final">
           <div className="reveal">
-            <Ticket st={chosen} timeText={maxTime(chosen) != null ? timeSummary(chosen) : null} wishes={shownWishes} />
+            <Ticket st={chosen} timeText={maxTime(chosen) != null ? timeSummary(chosen) : null} wishes={fromShare ? {} : shownWishes} />
           </div>
           {bases.filter(Boolean).length > 1 && (
             <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", marginTop: 12 }}>
