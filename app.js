@@ -305,11 +305,15 @@ function strengthTags(st, max = 3) {
       強みタグは "あるもの" しか出ないので、「無いもの」はここでしか分からない。
    ② 注意書き：アイコンでは分からない懸念だけを、必要なときだけ1行で添える。
    ─────────────────────────────────────────────────────── */
+// 4項目は「その街に何があるか」だけで揃える。時間帯（夜/昼）は街の性質ではなく
+// ユーザー側の予定なので、ここには混ぜない。夜に強い街は強みタグ「🌙 夜から ◎」で
+// 出るし、夜に出かける人は STEP01 の「夜から遊びたい」で絞り込める。
+// 各アイコンは対応する強みタグの上位集合にしてある（強みタグに出た項目が
+// ✕になることは無い）。
 const FACILITY = [
-  { k: "food", icon: "🍽", label: "ごはん", keys: ["gourmet", "drinking", "cafe"] },
+  { k: "food", icon: "🍽", label: "ごはん", keys: ["gourmet", "cafe"] },
+  { k: "drink", icon: "🍺", label: "飲み", keys: ["drinking"] },
   { k: "shop", icon: "🛍", label: "買い物", keys: ["shopping"] },
-  // 夜は「遅くまで店がある」だけでなく「夜景が目的地になる」街も○にする
-  { k: "night", icon: "🌙", label: "夜", keys: ["lateNight", "nightView"] },
   { k: "rain", icon: "☔", label: "雨", keys: ["rainyDay", "indoor"] },
 ];
 function hasFacility(st, f) {
@@ -1948,7 +1952,7 @@ function App() {
                 background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 10,
                 padding: "8px 11px", marginBottom: 12,
               }}>
-                各カードの <b style={{ color: C.signalDim }}>🍽 ごはん / 🛍 買い物 / 🌙 夜 / ☔ 雨</b> は、その街でそれができるかの目安です。
+                各カードの <b style={{ color: C.signalDim }}>🍽 ごはん / 🍺 飲み / 🛍 買い物 / ☔ 雨</b> は、その街でそれができるかの目安です。
                 <b>✕ は期待できない</b>という意味なので、行ってから困りそうならここで外してください。
               </div>
               <div style={{ display: "grid", gap: 12 }}>
