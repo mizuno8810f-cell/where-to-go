@@ -110,6 +110,28 @@ def main():
                 floored += 1
     print(f"5に格上げ: {promoted} 件 / 5→4に格下げ: {demoted} 件 / 4に底上げ: {floored} 件")
 
+    # ⑤.5 スコア間の整合性ルール
+    #     lateNight（夜から遊びたい）が「せんべろ・終電まで飲める街」だけに
+    #     付いていて、神楽坂・月島・麻布十番・浅草のような「夜から出かければ
+    #     十分成立する街」が2のままだった。ラベルの意味と合わないので底上げする。
+    #       規則1: 飲めるなら夜から出かけられる → lateNight >= drinking
+    #       規則2: 夜景があり、夜に開いている何か（買い物/遊ぶ/食事）もある
+    #              → lateNight >= 4。夜景だけで夜は無人になる浜辺などは対象外。
+    # 朝しか開いていないなど、規則2が明らかに当てはまらない駅は除外する。
+    NIGHT_EXCEPT = {"市場前"}          # 豊洲市場は朝の街
+    r1 = r2 = 0
+    for st in data:
+        sc = st["scores"]
+        if sc.get("drinking", 0) > sc.get("lateNight", 0):
+            sc["lateNight"] = sc["drinking"]
+            r1 += 1
+        elif (st["name"] not in NIGHT_EXCEPT and sc.get("nightView", 0) >= 4
+              and max(sc.get("shopping", 0), sc.get("entertainment", 0), sc.get("gourmet", 0)) >= 4
+              and sc.get("lateNight", 0) < 4):
+            sc["lateNight"] = 4
+            r2 += 1
+    print(f"夜からを底上げ: 飲みに合わせて {r1} 駅 / 夜景＋夜に開く施設で {r2} 駅")
+
     # ⑥ 王道度(iconic)を付与。未指定は種別から決める。
     #    「定番だけ」で一様抽選になり、渋谷と高幡不動が同確率になる問題への対処。
     icn = collections_Counter()

@@ -293,8 +293,11 @@ const WISH_SHORT = {
 const TAG_SKIP = ["indoor", "fullDay", "shortStay"];
 // その駅が何に強いかを上位3つまで返す（5=◎ / 4=○）
 function strengthTags(st, max = 3) {
-  return Object.keys(WISH_SHORT)
-    .filter((k) => TAG_SKIP.indexOf(k) < 0 && (st.scores[k] || 0) >= 4)
+  let keys = Object.keys(WISH_SHORT)
+    .filter((k) => TAG_SKIP.indexOf(k) < 0 && (st.scores[k] || 0) >= 4);
+  // 「夜から」は飲めれば成立するので、飲みと並ぶと枠の無駄になる。飲みがある時は省く。
+  if (keys.indexOf("drinking") >= 0) keys = keys.filter((k) => k !== "lateNight");
+  return keys
     .sort((a, b) => (st.scores[b] || 0) - (st.scores[a] || 0))
     .slice(0, max)
     .map((k) => ({ k, label: WISH_SHORT[k], top: (st.scores[k] || 0) >= 5 }));
