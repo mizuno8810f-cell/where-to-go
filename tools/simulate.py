@@ -26,7 +26,7 @@ MOOD_LABEL = {
     "walk": "ぶらぶらしたい", "scenery": "景色を見たい", "nightView": "夜景を見たい",
     "relax": "まったりしたい", "active": "アクティブに", "romantic": "デートっぽく",
     "unique": "ちょっと変わった", "rainyDay": "雨でも楽しみたい", "indoor": "屋内がいい",
-    "outdoor": "外で遊びたい", "lateNight": "夜から遊びたい", "fullDay": "一日遊びたい",
+    "outdoor": "外で遊びたい", "lateNight": "深夜から遊びたい", "fullDay": "一日遊びたい",
     "shortStay": "少しだけ",
 }
 
@@ -163,7 +163,7 @@ def build_personas():
         ({"gourmet": "on", "romantic": "on"}, "ご飯+デート"),
         ({"shopping": "on", "rainyDay": "on"}, "買い物+雨"),
         ({"relax": "on", "nature": "on"}, "まったり+自然"),
-        ({"drinking": "on", "lateNight": "on"}, "飲み+夜から"),
+        ({"drinking": "on", "lateNight": "on"}, "飲み+深夜"),
         ({"romantic": "top", "nightView": "on"}, "★デート+夜景"),
         ({"nature": "top", "active": "on"}, "★自然+アクティブ"),
     ]

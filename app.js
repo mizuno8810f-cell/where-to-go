@@ -275,7 +275,7 @@ const WISH_GROUPS = [
   { title: "食べる・飲む", items: [["drinking", "🍺 飲みに行きたい"], ["gourmet", "🍽 ご飯を楽しみたい"], ["cafe", "☕ カフェに行きたい"]] },
   { title: "遊ぶ", items: [["shopping", "🛍 買い物したい"], ["entertainment", "🎮 何かして遊びたい"], ["nature", "🌿 自然に行きたい"], ["walk", "🚶 ぶらぶらしたい"], ["scenery", "🌆 景色を見たい"], ["nightView", "🌃 夜景を見たい"]] },
   { title: "今日の気分", items: [["relax", "😴 まったりしたい"], ["active", "🏃 アクティブに"], ["romantic", "💕 デートっぽく"], ["unique", "💎 ちょっと変わった"]] },
-  { title: "今日の状況", items: [["rainyDay", "☔ 雨でも楽しみたい"], ["indoor", "🏠 屋内がいい"], ["outdoor", "☀️ 外で遊びたい"], ["lateNight", "🌙 夜から遊びたい"], ["fullDay", "🗓 一日遊びたい"], ["shortStay", "⏱ 少しだけ"]] },
+  { title: "今日の状況", items: [["rainyDay", "☔ 雨でも楽しみたい"], ["indoor", "🏠 屋内がいい"], ["outdoor", "☀️ 外で遊びたい"], ["lateNight", "🌙 深夜から遊びたい"], ["fullDay", "🗓 一日遊びたい"], ["shortStay", "⏱ 少しだけ"]] },
 ];
 // 気分キー → 表示名（絵文字を除いたもの）。緩和ヒントなどで使う。
 const WISH_LABEL = {};
@@ -287,17 +287,14 @@ const WISH_SHORT = {
   entertainment: "🎮 遊ぶ", nature: "🌿 自然", walk: "🚶 ぶらぶら", scenery: "🌆 景色",
   nightView: "🌃 夜景", relax: "😴 まったり", active: "🏃 アクティブ", romantic: "💕 デート",
   unique: "💎 変わってる", rainyDay: "☔ 雨でも", indoor: "🏠 屋内", outdoor: "☀️ 外遊び",
-  lateNight: "🌙 夜から", fullDay: "🗓 一日", shortStay: "⏱ 少しだけ",
+  lateNight: "🌙 深夜", fullDay: "🗓 一日", shortStay: "⏱ 少しだけ",
 };
 // 「雨でも」と「屋内」、「一日」と「少しだけ」は重複しやすいので代表だけ出す
 const TAG_SKIP = ["indoor", "fullDay", "shortStay"];
 // その駅が何に強いかを上位3つまで返す（5=◎ / 4=○）
 function strengthTags(st, max = 3) {
-  let keys = Object.keys(WISH_SHORT)
-    .filter((k) => TAG_SKIP.indexOf(k) < 0 && (st.scores[k] || 0) >= 4);
-  // 「夜から」は飲めれば成立するので、飲みと並ぶと枠の無駄になる。飲みがある時は省く。
-  if (keys.indexOf("drinking") >= 0) keys = keys.filter((k) => k !== "lateNight");
-  return keys
+  return Object.keys(WISH_SHORT)
+    .filter((k) => TAG_SKIP.indexOf(k) < 0 && (st.scores[k] || 0) >= 4)
     .sort((a, b) => (st.scores[b] || 0) - (st.scores[a] || 0))
     .slice(0, max)
     .map((k) => ({ k, label: WISH_SHORT[k], top: (st.scores[k] || 0) >= 5 }));
@@ -309,8 +306,9 @@ function strengthTags(st, max = 3) {
    ② 注意書き：アイコンでは分からない懸念だけを、必要なときだけ1行で添える。
    ─────────────────────────────────────────────────────── */
 // 4項目は「その街に何があるか」だけで揃える。時間帯（夜/昼）は街の性質ではなく
-// ユーザー側の予定なので、ここには混ぜない。夜に強い街は強みタグ「🌙 夜から ◎」で
-// 出るし、夜に出かける人は STEP01 の「夜から遊びたい」で絞り込める。
+// ユーザー側の予定なので、ここには混ぜない。終電後も遊べる街は強みタグ
+// 「🌙 深夜 ◎」で出るし、深夜に出かける人は STEP01 の「深夜から遊びたい」で
+// 絞り込める。
 // 各アイコンは対応する強みタグの上位集合にしてある（強みタグに出た項目が
 // ✕になることは無い）。
 const FACILITY = [
