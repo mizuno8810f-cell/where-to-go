@@ -1151,10 +1151,9 @@ function StatsScreen() {
 function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
-  const [screen, setScreen] = useState("title"); // title home step1 step2 step3 draw final result manage
+  const [screen, setScreen] = useState("home"); // home step1 pick10 step3 reveal final manage stats
   const [hf, setHf] = useState({ ...DEFAULT_HF, timeRanges: {} });
   const [fromShare, setFromShare] = useState(false); // 共有リンクで開いた結果を閲覧中か（他人の条件を見せない対策）
-  const [omakase, setOmakase] = useState(false); // 「おまかせで決める」＝全駅・出発駅/距離を無視
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
@@ -1403,7 +1402,6 @@ function App() {
     return out.filter((o) => o.n > count).sort((a, b) => b.n - a.n).slice(0, 3);
   }, [count, stations, hf, hardWishes, bases, timeMaps]);
   // 全駅（同名は1件に集約）。おまかせ＝出発駅/距離を無視して全駅から。
-  const allStations = useMemo(() => dedupeByName(stations, () => 0), [stations]);
 
   // 所要時間：駅ごとに設定するトグル。ONにしたら各出発駅の範囲を現在の共通範囲で初期化。
   const setTimePerBase = (on) => setHf((cur) => {
@@ -1420,7 +1418,7 @@ function App() {
     setHardWishes({}); setSoftWishes([]); setBases([BASE_DEFAULT]);
     setShown([]); setExcluded([]); setChosen(null); setRerollUsed(false);
     setMissionList(null); setMissionN(1);
-    setLastRecordedId(null); setFromShare(false); setOmakase(false);
+    setLastRecordedId(null); setFromShare(false);
   };
   const clearHash = () => { try { if (typeof history !== "undefined" && history.replaceState && location.hash) history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* noop */ } };
 
@@ -1442,10 +1440,10 @@ function App() {
     const arr = c ? c.split(",").map((x) => x.trim()).filter(Boolean) : [];
     return arr.length ? arr : [BASE_DEFAULT];
   };
-  // ホームの「条件を選んで決める」：Cookieの出発駅を復元してSTEP1へ（条件はデフォルト値）
-  const startConditions = () => { setOmakase(false); setBases(basesFromCookie()); setScreen("step1"); };
-  // 各画面の「条件を変えて選び直す」：いまの条件を保ったままSTEP1へ（おまかせ由来なら出発駅を復元）
-  const backToConditions = () => { if (omakase) setBases(basesFromCookie()); setOmakase(false); setScreen("step1"); };
+  // ホームの「はじめる」：Cookieの出発駅を復元してSTEP1へ（条件はデフォルト値）
+  const startConditions = () => { setBases(basesFromCookie()); setScreen("step1"); };
+  // 各画面の「条件を変えて選び直す」：いまの条件を保ったままSTEP1へ
+  const backToConditions = () => setScreen("step1");
   // 共有結果を見ている人が「自分でも試す」：自分の条件（デフォルト＋自分のCookie出発駅）でSTEP1へ
   const startOwnConditions = () => { resetConditions(); setBases(basesFromCookie()); clearHash(); setScreen("step1"); };
 
@@ -1509,14 +1507,7 @@ function App() {
 
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
-    setOmakase(false);
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
-    setExcluded([]); setChosen(null); setScreen("pick10");
-  };
-  // おまかせ：出発駅・距離・条件を無視して、全駅からランダムに10件
-  const searchOmakase = () => {
-    setOmakase(true);
-    setShown(sample(allStations, 10));
     setExcluded([]); setChosen(null); setScreen("pick10");
   };
 
@@ -1560,15 +1551,18 @@ function App() {
   return (
     <Shell>
 
-      {/* ヘッダ：ロゴ / パンくず / ホームアイコン / ハンバーガー */}
-      {screen !== "title" && (
-      <div style={{ marginBottom: 18 }}>
+      {/* ヘッダ：ロゴ / パンくず / ホームアイコン / ハンバーガー
+          ホームは画面内に大きなロゴとパンくず相当の情報があるので、
+          小さいロゴ・ホームアイコン・パンくずは出さずメニューだけ置く。 */}
+      <div style={{ marginBottom: screen === "home" ? 0 : 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          {screen === "home" ? <span /> : (
           <button onClick={goHome} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, display: "flex", alignItems: "center" }}>
             <Logo size={26} />
           </button>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <HomeIconBtn onClick={goHome} />
+            {screen !== "home" && <HomeIconBtn onClick={goHome} />}
             <ShareIconBtn onClick={doShare} />
             <button
               aria-label="メニュー"
@@ -1581,9 +1575,8 @@ function App() {
             >☰</button>
           </div>
         </div>
-        <Breadcrumb screen={screen} onNav={navTo} fromShare={fromShare} />
+        {screen !== "home" && <Breadcrumb screen={screen} onNav={navTo} fromShare={fromShare} />}
       </div>
-      )}
 
       {/* ハンバーガーメニュー */}
       {menuOpen && (
@@ -1676,11 +1669,11 @@ function App() {
           </div>
         </div>
       )}
-      {screen === "title" && (
-        <Fade key="title">
-          <div style={{ minHeight: "76vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "32px 6px" }}>
+      {screen === "home" && (
+        <Fade key="home">
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "18px 6px 8px" }}>
             <Logo size={62} />
-            <p style={{ fontFamily: ROUND, fontSize: 13, fontWeight: 700, color: C.signalDim, letterSpacing: 4, margin: "24px 0 20px" }}>
+            <p style={{ fontFamily: ROUND, fontSize: 13, fontWeight: 700, color: C.signalDim, letterSpacing: 4, margin: "22px 0 18px" }}>
               WHERE TO GO
             </p>
             <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, lineHeight: 1.9, maxWidth: 330, margin: 0 }}>
@@ -1688,7 +1681,7 @@ function App() {
               東京・神奈川・埼玉・千葉の1515駅から、<br />
               今日のおでかけ先をおまかせでご提案します。
             </p>
-            <div style={{ height: 24 }} />
+            <div style={{ height: 22 }} />
             <div style={{ width: "100%", maxWidth: 340, background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 16, padding: "16px 16px 8px", textAlign: "left" }}>
               <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 12, textAlign: "center" }}>
                 つかいかた（3ステップ）
@@ -1709,40 +1702,15 @@ function App() {
             </div>
             <div style={{ height: 22 }} />
             <div style={{ width: "100%", maxWidth: 340 }}>
-              <Btn onClick={() => setScreen("home")}>はじめる →</Btn>
+              <Btn onClick={startConditions}>はじめる →</Btn>
+              <div style={{ height: 20 }} />
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
+                <Btn kind="ghost" onClick={() => setScreen("manage")}>📍 ココイッタ登録 →</Btn>
+                <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
+                  行った場所を記録・確認する
+                </p>
+              </div>
             </div>
-          </div>
-        </Fade>
-      )}
-
-      {screen === "home" && (
-        <Fade key="home">
-          <h1 style={{ fontFamily: SANS, fontSize: 32, fontWeight: 900, color: C.ink, margin: "6px 0 6px", letterSpacing: 1 }}>
-            今日はどこ行く？
-          </h1>
-          <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, margin: "0 0 22px" }}>
-            考えるのは最低限。行き先はアプリにおまかせ。
-          </p>
-          <Board count={allStations.length} />
-          <p style={{ fontFamily: SANS, fontSize: 12.5, color: C.muted, textAlign: "center", margin: "8px 0 0", lineHeight: 1.6 }}>
-            東京・神奈川・埼玉・千葉の全駅。ここから今日の1つを決めます。
-          </p>
-          <div style={{ height: 20 }} />
-          <Btn onClick={startConditions}>条件を選んで決める →</Btn>
-          <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
-            エリア・時間・気分などで絞ってから決める
-          </p>
-          <div style={{ height: 14 }} />
-          <Btn kind="ghost" onClick={searchOmakase}>おまかせですぐ決める →</Btn>
-          <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
-            条件なし・全駅からランダムに候補を出す
-          </p>
-          <div style={{ height: 22 }} />
-          <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
-            <Btn kind="ghost" onClick={() => setScreen("manage")}>📍 ココイッタ登録 →</Btn>
-            <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", margin: "6px 0 0" }}>
-              行った場所を記録・確認する
-            </p>
           </div>
         </Fade>
       )}
@@ -1961,8 +1929,8 @@ function App() {
                   <div key={st.id} className="deal" style={{ animationDelay: `${i * 45}ms` }}>
                     <StationCard
                       st={st} index={i}
-                      timeText={(!omakase && hf.timeOn) ? timeSummary(st) : null}
-                      hops={omakase ? null : maxHops(st)}
+                      timeText={hf.timeOn ? timeSummary(st) : null}
+                      hops={maxHops(st)}
                       excludedMark={excluded.includes(st.id)}
                       onToggleExclude={() => toggleExclude(st)}
                     />
@@ -2029,12 +1997,12 @@ function App() {
           <div className="reveal">
             <Ticket
               st={chosen}
-              timeText={(!omakase && maxTime(chosen) != null) ? timeSummary(chosen) : null}
+              timeText={maxTime(chosen) != null ? timeSummary(chosen) : null}
               wishes={fromShare ? {} : shownWishes}
-              hops={(omakase || fromShare) ? null : maxHops(chosen)}
+              hops={fromShare ? null : maxHops(chosen)}
             />
           </div>
-          {!omakase && bases.filter(Boolean).length > 1 && (
+          {bases.filter(Boolean).length > 1 && (
             <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", marginTop: 12 }}>
               <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 2, color: C.signal, fontWeight: 700, marginBottom: 6 }}>各出発駅からの所要時間</div>
               <div style={{ display: "grid", gap: 6 }}>
