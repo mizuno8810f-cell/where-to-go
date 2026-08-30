@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8">
+<style>html,body{margin:0;padding:0}</style>
+<div id="c"></div>
+<script>
+  // ホーム画面アイコン。「ド」はフォントに依存しないパスで描く（丸ゴシック風にラウンドキャップ）。
+  // m=1 は Android の maskable 用：全面を緑にして、文字を安全領域(中央80%)に収める。
+  const q = new URLSearchParams(location.search);
+  const S = +q.get('s') || 512, mask = q.get('m') === '1';
+  const sc = mask ? 0.95 : 1.15;
+  const glyph = `<g transform="translate(50 50) scale(${sc}) translate(-57.5 -50)">
+      <g fill="none" stroke="#fff" stroke-linecap="round">
+        <g stroke-width="9.5"><path d="M40 21 V79"/><path d="M40 45 L69 63"/></g>
+        <g stroke-width="7.5"><path d="M60 24 L65.5 34"/><path d="M73 22 L78.5 32"/></g>
+      </g></g>`;
+  const bg = mask
+    ? `<rect width="100" height="100" fill="url(#g)"/>`
+    : `<rect width="100" height="100" fill="#F0EDE4"/><circle cx="50" cy="50" r="50" fill="url(#g)"/>`;
+  document.getElementById('c').innerHTML =
+    `<svg id="s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${S}" height="${S}">
+       <defs><radialGradient id="g" cx="32%" cy="26%" r="78%">
+         <stop offset="0" stop-color="#13A899"/><stop offset=".72" stop-color="#0E8C81"/>
+         <stop offset="1" stop-color="#0E8C81"/></radialGradient></defs>
+       ${bg}${glyph}</svg>`;
+</script>

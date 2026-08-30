@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ドコイク？">
+  <defs>
+    <radialGradient id="g" cx="32%" cy="26%" r="78%">
+      <stop offset="0" stop-color="#13A899"/>
+      <stop offset="0.72" stop-color="#0E8C81"/>
+      <stop offset="1" stop-color="#0E8C81"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="#F0EDE4"/>
+  <circle cx="256" cy="256" r="256" fill="url(#g)"/>
+  <g transform="scale(5.12) translate(50 50) scale(1.15) translate(-57.5 -50)">
+    <g fill="none" stroke="#fff" stroke-linecap="round">
+      <g stroke-width="9.5"><path d="M40 21 V79"/><path d="M40 45 L69 63"/></g>
+      <g stroke-width="7.5"><path d="M60 24 L65.5 34"/><path d="M73 22 L78.5 32"/></g>
+    </g>
+  </g>
+</svg>

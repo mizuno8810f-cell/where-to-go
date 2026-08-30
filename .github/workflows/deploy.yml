@@ -36,7 +36,9 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html app.js style.css supabase-client.js sfx.js config.js _site/
+          cp manifest.webmanifest _site/
           cp -r data _site/
+          cp -r icons _site/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
