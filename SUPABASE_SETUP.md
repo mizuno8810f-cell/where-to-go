@@ -21,6 +21,23 @@
   **「Anonymous sign-ins」を ON** にする。
   （これが OFF だと `signInAnonymously()` が失敗します）
 
+## 2.5. ID＋パスワードのログインを有効化（Dashboard）
+
+記録を端末の外に残せるようにするため、匿名アカウントを ID とパスワードで
+本登録に昇格できるようにしている。メールアドレスは使わないが、Supabase Auth は
+メール形式を要求するので、内部的に `ID@dokoiku.invalid` に変換して登録している。
+`.invalid` は RFC 2606 で実在しないことが保証されたドメインなので、
+誤って誰かにメールが届くことはない。
+
+- **Authentication → Sign In / Providers → Email** を **ON**
+- 同じ画面の **「Confirm email」を OFF**
+  （ONのままだと確認メールの到達を待つことになり、存在しないアドレスなので
+  永久に完了しない。アプリ側もこれを検知して、その旨のエラーを表示する）
+
+パスワードは Supabase 側で bcrypt ハッシュ化されて保存され、平文は残らない。
+メールを預からない代わりに **パスワードの再発行はできない**。
+アプリの登録画面ではその旨を警告している。
+
 ## 3. テーブル + RLS を作成（SQL Editor）
 
 **Supabase Dashboard → SQL Editor** に、下記 `sql/setup.sql` の全文を貼り付けて実行してください。

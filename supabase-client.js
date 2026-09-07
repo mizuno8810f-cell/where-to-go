@@ -23,7 +23,7 @@
     url.indexOf("YOUR_") === -1 &&
     anonKey.indexOf("YOUR_") === -1;
 
-  var state = { enabled: false, client: null, userId: null, ready: null, lastError: "" };
+  var state = { enabled: false, client: null, userId: null, ready: null, lastError: "", accountId: "" };
 
   // 端末を表すID。認証とは無関係に localStorage で持ち続ける。
   // 匿名セッションはトークンの更新に失敗すると破棄され、そのたびに別アカウントが
@@ -43,13 +43,85 @@
     } catch (e) { return null; }   // プライベートモード等では null（user_id で数える）
   }
 
+  // ---- ID＋パスワードの本登録 ------------------------------------------
+  // メールアドレスは使わないが、Supabase Auth はメール形式を要求するので
+  // 「ID@dokoiku.invalid」に変換して登録する。.invalid は RFC 2606 で
+  // 実在しないことが保証されたドメインなので、誤送信の心配が無い。
+  var ID_DOMAIN = "@dokoiku.invalid";
+  var ID_RE = /^[A-Za-z0-9_]{4,20}$/;
+  function toEmail(id) { return String(id || "").trim().toLowerCase() + ID_DOMAIN; }
+  function fromEmail(email) {
+    var e = String(email || "");
+    return e.indexOf(ID_DOMAIN) > 0 ? e.slice(0, e.length - ID_DOMAIN.length) : "";
+  }
+  // Supabase の英語エラーを、そのまま出しても分かる日本語にする
+  function authMessage(e) {
+    var m = ((e && e.message) || String(e || "")).toLowerCase();
+    if (m.indexOf("already registered") >= 0 || m.indexOf("already been registered") >= 0 ||
+        m.indexOf("already exists") >= 0) return "そのIDは既に使われています。別のIDにしてください。";
+    if (m.indexOf("invalid login") >= 0 || m.indexOf("invalid credentials") >= 0)
+      return "IDかパスワードが違います。";
+    if (m.indexOf("password should be") >= 0 || m.indexOf("password is too short") >= 0)
+      return "パスワードが短すぎます。8文字以上にしてください。";
+    if (m.indexOf("disabled") >= 0 || m.indexOf("not allowed") >= 0)
+      return "登録が有効になっていません（Supabase の Authentication → Providers → Email を有効化してください）。";
+    if (m.indexOf("rate limit") >= 0 || m.indexOf("too many") >= 0)
+      return "試行が多すぎます。しばらく待ってからお試しください。";
+    return (e && e.message) || "うまくいきませんでした。";
+  }
+
   function makeApi() {
     return {
       get configured() { return configured; },
       get enabled() { return state.enabled; },
       get userId() { return state.userId; },
       get lastError() { return state.lastError; },
+      get accountId() { return state.accountId; },      // 本登録済みなら ID、未登録なら ""
+      get registered() { return !!state.accountId; },
       ready: function () { return state.ready; },
+      validateId: function (id) { return ID_RE.test(String(id || "").trim()); },
+
+      // 新規登録：いまの匿名アカウントを「そのまま」本登録に昇格させる。
+      // user_id が変わらないので、これまでのココイッタがすべて引き継がれる。
+      signUpWithId: async function (id, password) {
+        if (!state.enabled) throw new Error("クラウドに接続できていません。");
+        if (!ID_RE.test(String(id || "").trim())) throw new Error("IDは半角英数と _ で4〜20文字にしてください。");
+        if (String(password || "").length < 8) throw new Error("パスワードは8文字以上にしてください。");
+        var email = toEmail(id);
+        var res = await state.client.auth.updateUser({ email: email, password: password });
+        if (res.error) throw new Error(authMessage(res.error));
+        // メール確認がONだと email は保留のまま反映されない。その場合は設定変更を促す。
+        var u = res.data && res.data.user;
+        if (!u || String(u.email || "").toLowerCase() !== email) {
+          throw new Error("登録を確定できませんでした。Supabase の Authentication → Providers → Email で「Confirm email」をOFFにしてください。");
+        }
+        state.accountId = fromEmail(u.email);
+        return state.accountId;
+      },
+
+      // ログイン：別の端末・ブラウザから、同じ記録に戻る
+      signInWithId: async function (id, password) {
+        if (!state.client) throw new Error("クラウドに接続できていません。");
+        var res = await state.client.auth.signInWithPassword({ email: toEmail(id), password: password });
+        if (res.error) throw new Error(authMessage(res.error));
+        var u = res.data && res.data.user;
+        state.userId = u ? u.id : null;
+        state.enabled = !!state.userId;
+        state.accountId = fromEmail(u && u.email);
+        return state.accountId;
+      },
+
+      // ログアウト → 匿名に戻す（この端末の表示を空にするのは呼び出し側の責任）
+      signOutToAnonymous: async function () {
+        if (!state.client) return false;
+        try { await state.client.auth.signOut(); } catch (e) { /* 続行 */ }
+        state.accountId = "";
+        var r = await state.client.auth.signInAnonymously();
+        if (r.error) { state.enabled = false; state.userId = null; throw new Error(authMessage(r.error)); }
+        state.userId = r.data.session && r.data.session.user ? r.data.session.user.id : null;
+        state.enabled = !!state.userId;
+        return true;
+      },
 
       // 集計値の取得（合計値のみ。RLSを迂回するsecurity definer関数を呼ぶ）
       getStats: async function () {
@@ -208,6 +280,7 @@
       }
       state.userId = session && session.user ? session.user.id : null;
       state.enabled = !!state.userId;
+      state.accountId = fromEmail(session && session.user && session.user.email);
       return state.enabled;
     } catch (e) {
       state.lastError = "匿名ログイン失敗: " + ((e && e.message) || String(e));

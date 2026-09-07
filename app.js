@@ -1064,6 +1064,157 @@ function MiniBars({ data }) {
   );
 }
 
+/* ============================================================
+   アカウント（IDとパスワードだけの簡易登録）
+
+   記録は端末の localStorage にも置いているが、iOS Safari は
+   「しばらく開かないサイト」の保存領域を自動で消す。端末が消えても
+   記録を取り戻せるようにするには、本人が覚えているもの＝IDとパスワードが要る。
+   メールは使わないので、パスワードの再発行はできない。そこは明示して警告する。
+   ============================================================ */
+const AUTH_SKIP_KEY = "wheretogo:authskip:v1";
+const inputBase = {
+  width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12,
+  border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink,
+};
+
+function AuthModal({ onClose, onDone, onSkip }) {
+  const [mode, setMode] = useState("signup");   // signup | signin
+  const [id, setId] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+
+  const submit = async () => {
+    if (busy) return;
+    setErr(""); setBusy(true);
+    try {
+      if (!SH || !(await SH.ready())) throw new Error("クラウドに接続できていません。時間をおいてお試しください。");
+      const who = mode === "signup"
+        ? await SH.signUpWithId(id, pw)
+        : await SH.signInWithId(id, pw);
+      onDone(who, mode);
+    } catch (e) {
+      setErr((e && e.message) || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const Tab = ({ v, children }) => (
+    <button onClick={() => { setMode(v); setErr(""); }} style={{
+      flex: 1, padding: "10px 8px", borderRadius: 10, cursor: "pointer",
+      border: `1.5px solid ${mode === v ? C.signal : C.line}`,
+      background: mode === v ? C.signal : C.paperCard,
+      color: mode === v ? "#fff" : C.inkSoft,
+      fontFamily: SANS, fontSize: 14, fontWeight: 700,
+    }}>{children}</button>
+  );
+
+  return (
+    <div style={modalWrap} onClick={onClose}>
+      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, color: C.ink }}>記録を残す</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 15, fontWeight: 700, color: C.muted }}>とじる ✕</button>
+        </div>
+        <p style={{ fontFamily: SANS, fontSize: 13, color: C.inkSoft, lineHeight: 1.7, margin: "0 0 14px" }}>
+          ココイッタの記録は、いまこの端末にだけ入っています。
+          <b>しばらく開かないと、スマホが自動で消してしまうことがあります。</b><br />
+          IDとパスワードを決めておくと、消えても・機種を変えても元に戻せます。
+        </p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <Tab v="signup">はじめて登録する</Tab>
+          <Tab v="signin">登録済みの人</Tab>
+        </div>
+
+        <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1.5, color: C.signal, fontWeight: 700 }}>ID</label>
+        <input
+          value={id} onChange={(e) => setId(e.target.value)} autoComplete="username"
+          autoCapitalize="none" autoCorrect="off" spellCheck={false}
+          placeholder="半角英数と _ で4〜20文字" style={{ ...inputBase, marginTop: 4 }}
+        />
+        <div style={{ height: 12 }} />
+        <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1.5, color: C.signal, fontWeight: 700 }}>パスワード</label>
+        <input
+          type="password" value={pw} onChange={(e) => setPw(e.target.value)}
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          placeholder="8文字以上" style={{ ...inputBase, marginTop: 4 }}
+        />
+
+        {mode === "signup" && (
+          <div style={{
+            marginTop: 14, background: "rgba(192,85,62,.08)", border: `1.5px solid rgba(192,85,62,.35)`,
+            borderRadius: 12, padding: "11px 13px",
+          }}>
+            <div style={{ fontFamily: SANS, fontSize: 13, fontWeight: 800, color: C.danger, marginBottom: 4 }}>
+              ⚠ パスワードは再発行できません
+            </div>
+            <p style={{ fontFamily: SANS, fontSize: 12, color: C.inkSoft, margin: 0, lineHeight: 1.65 }}>
+              メールアドレスを預からないので、忘れると記録を取り出す方法がありません。
+              スマホのパスワード保存機能や、パスワード管理アプリに必ず控えてください。
+            </p>
+          </div>
+        )}
+
+        {err && (
+          <p style={{ fontFamily: SANS, fontSize: 13, fontWeight: 700, color: C.danger, margin: "12px 0 0", lineHeight: 1.6 }}>{err}</p>
+        )}
+
+        <div style={{ height: 16 }} />
+        <Btn onClick={submit} disabled={busy}>
+          {busy ? "処理中…" : (mode === "signup" ? "登録して記録する" : "ログインして記録する")}
+        </Btn>
+        <div style={{ height: 10 }} />
+        <Btn kind="ghost" onClick={onSkip}>あとで（登録せずに記録する）</Btn>
+        <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.danger, textAlign: "center", margin: "8px 0 0", lineHeight: 1.6 }}>
+          ※ 登録しないと、この端末から記録が消えたときに戻せません
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* 未登録の人に出す注意書き。ココイッタ画面などに常設する。 */
+function AccountNotice({ accountId, onOpen, onSignOut }) {
+  if (accountId) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+        background: "rgba(14,140,129,.08)", border: `1px solid rgba(14,140,129,.28)`,
+        borderRadius: 12, padding: "10px 13px", marginBottom: 14,
+      }}>
+        <span style={{ fontFamily: SANS, fontSize: 12.5, color: C.signalDim, fontWeight: 700 }}>
+          ✓ {accountId} でログイン中。記録はクラウドにも保存されています
+        </span>
+        <button onClick={onSignOut} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 12, fontWeight: 700, color: C.muted, whiteSpace: "nowrap" }}>
+          ログアウト
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div style={{
+      background: "rgba(226,154,59,.10)", border: `1.5px solid rgba(226,154,59,.45)`,
+      borderRadius: 12, padding: "11px 13px", marginBottom: 14,
+    }}>
+      <div style={{ fontFamily: SANS, fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 3 }}>
+        ⚠ この記録は消えることがあります
+      </div>
+      <p style={{ fontFamily: SANS, fontSize: 12, color: C.inkSoft, margin: "0 0 9px", lineHeight: 1.65 }}>
+        いまの記録はこの端末にだけあります。しばらく開かないとスマホが自動で消すことがあり、
+        機種を変えても引き継げません。IDとパスワードを決めておけば元に戻せます。
+      </p>
+      <button onClick={onOpen} style={{
+        background: C.signal, color: "#fff", border: "none", borderRadius: 10,
+        padding: "9px 14px", cursor: "pointer", fontFamily: SANS, fontSize: 13, fontWeight: 700,
+      }}>記録を守る（登録・ログイン）</button>
+    </div>
+  );
+}
+
 /* 集計画面（隠しURL #stats）：主要数値の表示＋リロード＋日別グラフ */
 function StatsScreen() {
   const [data, setData] = useState(null);
@@ -1193,6 +1344,10 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false); // 使い方モーダル
+  // アカウント（ID+パスワード）。未登録なら accountId は ""
+  const [accountId, setAccountId] = useState("");
+  const [authOpen, setAuthOpen] = useState(false);      // ログイン/登録モーダル
+  const pendingAction = useRef(null);                   // 認証後に実行したい操作
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
   const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
@@ -1231,6 +1386,7 @@ function App() {
       try {
         const SH = typeof window !== "undefined" ? window.SupaHistory : null;
         if (SH && (await SH.ready())) {
+          setAccountId(SH.accountId || "");
           const summary = await SH.getCountsSummary();
           setStations((cur) => {
             const next = cur.map((s) => {
@@ -1583,6 +1739,59 @@ function App() {
   const decideWithWishes = () => runReveal(shown.filter((s) => !excluded.includes(s.id)));
 
   // 「行った」記録：訪問回数+1・最終訪問日を今日に
+  // 記録する操作の前に一度だけ登録をすすめる。「あとで」を選んだ人には
+  // 二度と自動では出さず、代わりに注意書きを常設する（しつこくしない）。
+  const requireAccount = (fn) => {
+    const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+    const skipped = LS.get(AUTH_SKIP_KEY) === "1";
+    if (accountId || skipped || !SH || !SH.configured) { fn(); return; }
+    pendingAction.current = fn;
+    setAuthOpen(true);
+  };
+  const onAuthDone = async (who, mode) => {
+    setAccountId(who || "");
+    setAuthOpen(false);
+    LS.set(AUTH_SKIP_KEY, "0");
+    // ログイン（別端末からの復帰）はクラウドを正とする。登録（昇格）は
+    // user_id が変わらないので、いまの表示のままでよい。
+    if (mode === "signin") {
+      try {
+        const SH = window.SupaHistory;
+        const summary = await SH.getCountsSummary();
+        setStations((cur) => {
+          const next = cur.map((s) => {
+            const e = summary[s.id];
+            return e
+              ? { ...s, visited: true, visitCount: e.count, lastVisit: e.lastVisit }
+              : { ...s, visited: false, visitCount: 0, lastVisit: null };
+          });
+          saveStations(next);
+          return next;
+        });
+      } catch (e) { /* 取得に失敗しても、いまの表示は保つ */ }
+    }
+    const fn = pendingAction.current; pendingAction.current = null;
+    if (fn) fn();
+  };
+  const onAuthSkip = () => {
+    LS.set(AUTH_SKIP_KEY, "1");
+    setAuthOpen(false);
+    const fn = pendingAction.current; pendingAction.current = null;
+    if (fn) fn();
+  };
+  const signOut = async () => {
+    const SH = typeof window !== "undefined" ? window.SupaHistory : null;
+    if (!SH) return;
+    try { await SH.signOutToAnonymous(); } catch (e) { /* 続行 */ }
+    setAccountId("");
+    // この端末の表示も空にする（他人の端末に記録を残さない）
+    setStations((cur) => {
+      const next = cur.map((s) => ({ ...s, visited: false, visitCount: 0, lastVisit: null }));
+      saveStations(next);
+      return next;
+    });
+  };
+
   const recordVisit = (st) => {
     const next = stations.map((x) =>
       x.id === st.id ? { ...x, visited: true, visitCount: x.visitCount + 1, lastVisit: new Date().toISOString().slice(0, 10) } : x
@@ -1646,12 +1855,27 @@ function App() {
             />
             <div style={{ height: 10 }} />
             <MenuItem
+              icon="🔑" title={accountId ? `アカウント（${accountId}）` : "アカウント（記録を守る）"}
+              desc={accountId ? "ログイン中。別の端末からも同じ記録が見られます。" : "IDとパスワードを決めると、端末が変わっても記録を戻せます。"}
+              onClick={() => { setMenuOpen(false); pendingAction.current = null; setAuthOpen(true); }}
+            />
+            <div style={{ height: 10 }} />
+            <MenuItem
               icon="📍" title="ココイッタ登録"
               desc="行った場所を記録して、回数を管理します。"
               onClick={() => { setMenuOpen(false); setScreen("manage"); }}
             />
           </div>
         </div>
+      )}
+
+      {/* ログイン / 新規登録 */}
+      {authOpen && (
+        <AuthModal
+          onClose={() => { pendingAction.current = null; setAuthOpen(false); }}
+          onDone={onAuthDone}
+          onSkip={onAuthSkip}
+        />
       )}
 
       {/* 設定モーダル */}
@@ -2086,7 +2310,7 @@ function App() {
           <VisitControl
             station={chosen}
             recorded={lastRecordedId === chosen.id}
-            onRecorded={() => { recordVisit(chosen); setLastRecordedId(chosen.id); }}
+            onRecorded={() => requireAccount(() => { recordVisit(chosen); setLastRecordedId(chosen.id); })}
           />
           <div style={{ height: 12 }} />
           <Btn kind="dark" onClick={shareResult}>
@@ -2115,6 +2339,10 @@ function App() {
           chosenHistory={chosenHistory}
           lastRecordedId={lastRecordedId}
           onClearRecorded={() => setLastRecordedId(null)}
+          accountId={accountId}
+          requireAccount={requireAccount}
+          onOpenAuth={() => { pendingAction.current = null; setAuthOpen(true); }}
+          onSignOut={signOut}
         />
       )}
 
@@ -2483,7 +2711,8 @@ function BasePicker({ stations, baseId, onPick, index }) {
   );
 }
 
-function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearRecorded }) {
+function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearRecorded,
+                 accountId, requireAccount, onOpenAuth, onSignOut }) {
   const [regOpen, setRegOpen] = useState(false); // 登録モーダルの開閉
   const [regQ, setRegQ] = useState("");         // 登録モーダルの検索
   const [q, setQ] = useState("");               // 一覧内の検索
@@ -2492,7 +2721,8 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
   const today = new Date().toISOString().slice(0, 10);
 
   // ＋1：ローカル即時更新＋Supabaseへ1レコード追加
-  const addOne = async (st) => {
+  const addOne = (st) => requireAccount(() => addOneNow(st));
+  const addOneNow = async (st) => {
     onChange(stations.map((x) => x.id === st.id
       ? { ...x, visited: true, visitCount: x.visitCount + 1, lastVisit: today } : x));
     const SH = typeof window !== "undefined" ? window.SupaHistory : null;
@@ -2538,6 +2768,8 @@ function Manage({ stations, onChange, chosenHistory, lastRecordedId, onClearReco
   return (
     <Fade key="manage">
       <StepHead n="—" title="ココイッタ（行った場所の記録）" sub="実際に行った場所がたまっていきます。回数が多い順にならび、一覧をタップすると回数を編集できます。" />
+
+      <AccountNotice accountId={accountId} onOpen={onOpenAuth} onSignOut={onSignOut} />
 
       {/* ココイッタ登録ボタン → 駅を検索する状態でモーダルを開く */}
       <Btn kind="primary" onClick={() => openReg("")}>
