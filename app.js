@@ -826,7 +826,12 @@ function DrawTen({ poolNames, total, count, onTick, onDone }) {
   const doneRef = useRef(false);
   const finish = () => { if (doneRef.current) return; doneRef.current = true; onDone(); };
   useEffect(() => {
-    if (prefersReduce()) { finish(); return; }
+    // 視差軽減の設定でも「出さない」のではなく、ゆっくり回す。
+    // 動きそのもの（落下・スライド）は style.css 側で止めてあるので、
+    // ここでは駅名の切り替えとカードの出現だけが残る。ルーレット(Reveal)と
+    // 同じ考え方。前は丸ごと飛ばしていて、設定をONにしている人には
+    // 演出が一度も出なかった。
+    const reduce = prefersReduce();
     let alive = true;
     const timers = [];
     const pool = poolNames.length ? poolNames : [""];
@@ -835,7 +840,7 @@ function DrawTen({ poolNames, total, count, onTick, onDone }) {
       if (!alive) return;
       setName(pool[Math.floor(Math.random() * pool.length)]);
       if (onTick) onTick();
-    }, 55);
+    }, reduce ? 110 : 55);
     timers.push(setTimeout(() => {
       clearInterval(spin);
       // 後半：1枚ずつ配る
