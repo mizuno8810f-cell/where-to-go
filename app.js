@@ -816,6 +816,76 @@ function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude,
   );
 }
 
+/* 10件を「引く」演出。
+   最後の1件はルーレットで選ばれる実感があるのに、その手前の10件は
+   ただ一覧が出るだけで「たくさんの中から引いた」感が無かった。
+   候補プールの駅名を高速で回してから、1枚ずつ配る。タップで飛ばせる。 */
+function DrawTen({ poolNames, total, count, onTick, onDone }) {
+  const [name, setName] = useState(poolNames[0] || "");
+  const [n, setN] = useState(0);          // 配り終えた枚数
+  const doneRef = useRef(false);
+  const finish = () => { if (doneRef.current) return; doneRef.current = true; onDone(); };
+  useEffect(() => {
+    if (prefersReduce()) { finish(); return; }
+    let alive = true;
+    const timers = [];
+    const pool = poolNames.length ? poolNames : [""];
+    // 前半：候補プールをシャッフルして見せる
+    const spin = setInterval(() => {
+      if (!alive) return;
+      setName(pool[Math.floor(Math.random() * pool.length)]);
+      if (onTick) onTick();
+    }, 55);
+    timers.push(setTimeout(() => {
+      clearInterval(spin);
+      // 後半：1枚ずつ配る
+      for (let i = 1; i <= count; i++) {
+        timers.push(setTimeout(() => {
+          if (!alive) return;
+          setN(i);
+          if (onTick) onTick();
+          if (i === count) timers.push(setTimeout(finish, 260));
+        }, i * 105));
+      }
+    }, 850));
+    return () => { alive = false; clearInterval(spin); timers.forEach(clearTimeout); };
+  }, []);
+
+  return (
+    <div onClick={finish} style={{ cursor: "pointer", padding: "10px 0 4px" }}>
+      <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: 2, color: C.signal, fontWeight: 700, textAlign: "center" }}>
+        DRAWING
+      </div>
+      <div style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, textAlign: "center", margin: "6px 0 14px" }}>
+        <b style={{ fontFamily: MONO, fontSize: 22, color: C.ink }}>{total}</b> 件のなかから <b>{count}</b> 件を引いています
+      </div>
+      {/* 回っている駅名 */}
+      <div style={{
+        background: C.ink, borderRadius: 16, padding: "22px 16px", textAlign: "center",
+        boxShadow: `0 10px 26px -14px rgba(23,38,58,.8)`, overflow: "hidden",
+      }}>
+        <span key={name} className="reel" style={{
+          display: "inline-block", fontFamily: SANS, fontSize: 30, fontWeight: 900,
+          color: n ? C.signalBright : "#fff", letterSpacing: 1,
+        }}>{n ? `${n} / ${count} 枚` : (name || "…")}</span>
+      </div>
+      {/* 引いた枚数のドット */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 14 }}>
+        {Array.from({ length: count }).map((_, i) => (
+          <span key={i} style={{
+            width: 9, height: 9, borderRadius: "50%",
+            background: i < n ? C.signal : C.line,
+            transition: "background .18s ease",
+          }} />
+        ))}
+      </div>
+      <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", marginTop: 14 }}>
+        タップで飛ばせます
+      </p>
+    </div>
+  );
+}
+
 /* 抽選機：駅名が高速で切り替わり、減速して「ガコン」と止まる */
 function Reveal({ names, targetName, onDone }) {
   const [display, setDisplay] = useState(names[0] || targetName);
@@ -1377,6 +1447,7 @@ function App() {
   // アカウント（ID+パスワード）。未登録なら accountId は ""
   const [accountId, setAccountId] = useState("");
   const [authOpen, setAuthOpen] = useState(false);      // ログイン/登録モーダル
+  const [drawing, setDrawing] = useState(false);        // 10件を引く演出中
   const pendingAction = useRef(null);                   // 認証後に実行したい操作
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
@@ -1675,8 +1746,6 @@ function App() {
   };
   // ホームの「はじめる」：Cookieの出発駅を復元してSTEP1へ（条件はデフォルト値）
   const startConditions = () => { setBases(basesFromCookie()); setScreen("step1"); };
-  // 各画面の「条件を変えて選び直す」：いまの条件を保ったままSTEP1へ
-  const backToConditions = () => setScreen("step1");
   // 共有結果を見ている人が「自分でも試す」：自分の条件（デフォルト＋自分のCookie出発駅）でSTEP1へ
   const startOwnConditions = () => { resetConditions(); setBases(basesFromCookie()); clearHash(); setScreen("step1"); };
 
@@ -1741,16 +1810,16 @@ function App() {
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
-    setExcluded([]); setChosen(null); setScreen("pick10");
+    setExcluded([]); setChosen(null); setDrawing(true); setScreen("pick10");
   };
 
   // 今日の気分（任意条件フェーズ）画面へ
-  const goWishes = () => setScreen("step3");
+  const goWishes = () => { setDrawing(false); setScreen("step3"); };
 
   const reroll = () => {
     if (rerollUsed) return;
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
-    setExcluded([]); setChosen(null); setRerollUsed(true); setScreen("pick10");
+    setExcluded([]); setChosen(null); setRerollUsed(true); setDrawing(true); setScreen("pick10");
   };
 
   // 10件（「ここは嫌だ」除外後）から1件。気分未選択なら完全ランダム、選択なら気分スコアの積で重み付け。
@@ -1834,8 +1903,31 @@ function App() {
     return <Shell><div style={{ textAlign: "center", padding: 60, fontFamily: MONO, color: C.muted }}>読み込み中…</div></Shell>;
   }
 
+  // 固定バーの中身。画面ごとに「もどる先」と「次に進むボタン」を決める。
+  const remainingShown = shown.filter((s) => !excluded.includes(s.id)).length;
+  const bar = (() => {
+    if (screen === "home" || screen === "reveal") return null;
+    const backTo = (fromShare && screen === "final") ? "home" : BACK_TO[screen];
+    const backLabel = backTo === "home" ? "ホーム" : "もどる";
+    if (screen === "step1") {
+      return { backTo, backLabel, ctaLabel: "この条件で候補を出す →", ctaDisabled: count === 0, onCta: search10 };
+    }
+    if (screen === "pick10" && drawing && shown.length > 0) return null;
+    if (screen === "pick10" && shown.length > 0) {
+      return { backTo, backLabel, ctaLabel: "ここから一つ決める →", ctaDisabled: remainingShown === 0, onCta: goWishes, ctaKind: "dark" };
+    }
+    if (screen === "step3") {
+      return {
+        backTo, backLabel,
+        ctaLabel: softWishes.length ? "🎲 この気分で1つ決める！" : "🎲 ランダムで1つ決める！",
+        ctaDisabled: remainingShown === 0, onCta: decideWithWishes,
+      };
+    }
+    return { backTo, backLabel };
+  })();
+
   return (
-    <Shell>
+    <Shell hasBar={!!bar}>
 
       {/* ヘッダ：ロゴ / パンくず / ホームアイコン / ハンバーガー
           ホームは画面内に大きなロゴとパンくず相当の情報があるので、
@@ -2155,7 +2247,7 @@ function App() {
           )}
 
           <div style={{ height: 26 }} />
-          <Btn onClick={search10} disabled={count === 0}>この条件で候補を出す →</Btn>
+
 
           {/* 候補が少ない/0件のとき、実際に効く緩和策を提案する */}
           {relaxSuggestions.length > 0 && (
@@ -2201,6 +2293,22 @@ function App() {
 
       {screen === "pick10" && (() => {
         const remaining = shown.filter((s) => !excluded.includes(s.id)).length;
+        if (drawing && shown.length > 0) {
+          return (
+            <Fade key="draw">
+              <StepHead n="02" title="今日の候補" sub="条件に合う駅の中から、ランダムで10件を引きます。" />
+              <DrawTen
+                poolNames={candidates.slice(0, 60).map((s) => s.name)}
+                total={count} count={shown.length}
+                onTick={() => { if (typeof window !== "undefined" && window.Sfx) window.Sfx.tick(); }}
+                onDone={() => {
+                  setDrawing(false);
+                  if (typeof window !== "undefined" && window.Sfx) window.Sfx.win();
+                }}
+              />
+            </Fade>
+          );
+        }
         return (
         <Fade key="pick10">
           <StepHead n="02" title="今日の候補" sub="気が乗らない所は「ここは嫌だ」で外せます。「ここから一つ決める」を押すと、ルーレットで1つに決まります。" />
@@ -2213,8 +2321,14 @@ function App() {
             </div>
           ) : (
             <>
-              <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginBottom: 8 }}>
-                のこり {remaining} 件
+              <div style={{
+                display: "flex", alignItems: "baseline", justifyContent: "space-between",
+                gap: 8, marginBottom: 8,
+              }}>
+                <span style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft }}>
+                  条件に合う <b style={{ fontFamily: MONO, color: C.ink }}>{count}</b> 件から引いた <b style={{ fontFamily: MONO, color: C.signal }}>{shown.length}</b> 件
+                </span>
+                <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>のこり {remaining} 件</span>
               </div>
               {/* 行ってから気づく「無いもの」を先に伝えるための凡例 */}
               <div style={{
@@ -2227,7 +2341,7 @@ function App() {
               </div>
               <div style={{ display: "grid", gap: 12 }}>
                 {shown.map((st, i) => (
-                  <div key={st.id} className="deal" style={{ animationDelay: `${i * 45}ms` }}>
+                  <div key={st.id} className="deal" style={{ animationDelay: `${i * 70}ms` }}>
                     <StationCard
                       st={st} index={i}
                       timeText={hf.timeOn ? timeSummary(st) : null}
@@ -2238,12 +2352,6 @@ function App() {
                   </div>
                 ))}
               </div>
-              <div style={{ height: 22 }} />
-              <Btn kind="dark" onClick={goWishes} disabled={remaining === 0}>
-                ここから一つ決める →
-              </Btn>
-              <div style={{ height: 10 }} />
-              <Btn kind="ghost" onClick={backToConditions}>🔧 条件を変えて選び直す</Btn>
               {remaining === 0 && (
                 <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
                   全部外しています。どれか戻すか、条件を足して選び直してください。
@@ -2274,12 +2382,6 @@ function App() {
             </p>
           </div>
           <SoftWishPicker selected={softWishes} onToggle={toggleSoftWish} />
-          <div style={{ height: 18 }} />
-          <Btn onClick={decideWithWishes} disabled={pool.length === 0}>
-            {hasMood ? "🎲 この気分で1つ決める！" : "🎲 ランダムで1つ決める！"}
-          </Btn>
-          <div style={{ height: 10 }} />
-          <Btn kind="ghost" onClick={backToConditions}>🔧 条件を変えて選び直す</Btn>
           {pool.length === 0 && (
             <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
               候補がありません。前の画面で戻すか、条件をゆるめてください。
@@ -2355,10 +2457,8 @@ function App() {
           {fromShare ? (
             <Btn kind="ghost" onClick={startOwnConditions}>🔧 自分でも条件を選んで決める →</Btn>
           ) : (
-            <Btn kind="ghost" onClick={backToConditions}>🔧 条件を変えて選び直す</Btn>
+            <Btn kind="ghost" onClick={goHome}>🏠 ホームに戻る</Btn>
           )}
-          <div style={{ height: 10 }} />
-          <Btn kind="ghost" onClick={goHome}>🏠 ホームに戻る</Btn>
         </Fade>
       )}
 
@@ -2377,6 +2477,9 @@ function App() {
       )}
 
       {screen === "stats" && <StatsScreen />}
+
+      {/* 画面下に固定の操作バー（もどる / 次に進む） */}
+      {bar && <ActionBar {...bar} onBack={navTo} />}
 
       {/* STEP1でボードが見えなくなったら、上部に小さな件数バッジを固定表示 */}
       {screen === "step1" && !boardVisible && (
@@ -2546,9 +2649,12 @@ function VisitRow({ st, onAdd, onRemove, recorded, rank, editable, onEdit }) {
 /* ============================================================
    レイアウト部品
    ============================================================ */
-function Shell({ children }) {
+function Shell({ children, hasBar }) {
   return (
-    <div style={{ minHeight: "100vh", background: C.paper, padding: "22px 16px 48px" }}>
+    <div style={{
+      minHeight: "100vh", background: C.paper,
+      padding: hasBar ? "22px 16px calc(96px + env(safe-area-inset-bottom, 0px))" : "22px 16px 48px",
+    }}>
       <div style={{ maxWidth: 440, margin: "0 auto" }}>{children}</div>
     </div>
   );
@@ -2647,6 +2753,63 @@ const CRUMBS = {
   manage: [["ホーム", "home"], ["ココイッタ", "manage"]],
   stats: [["ホーム", "home"], ["統計", "stats"]],
 };
+// 「もどる」の行き先。パンくずの1つ手前と同じ考え方。
+const BACK_TO = {
+  step1: "home",
+  pick10: "step1",
+  step3: "pick10",
+  final: "step3",
+  manage: "home",
+  stats: "home",
+};
+
+/* 画面下に固定する操作バー。
+   ・左が「もどる」。1つ前の状態へ。今までは画面を最後まで
+     スクロールしないと戻れず、迷子になる人が多かった。
+   ・右が「次に進む」。こちらも下までスクロールしないと押せなかった。
+   この2つを常に見える位置に置く。抽選中とホームでは出さない。 */
+function ActionBar({ backTo, backLabel, onBack, ctaLabel, ctaDisabled, onCta, ctaKind }) {
+  if (!backTo && !ctaLabel) return null;
+  const tap = () => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } };
+  const styles = { primary: { bg: C.signal, sh: C.signalDim }, dark: { bg: C.ink, sh: "#0d1826" } }[ctaKind || "primary"];
+  return (
+    <div style={{
+      position: "fixed", left: 0, right: 0, zIndex: 44,
+      bottom: 0, padding: "10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",
+      background: "rgba(240,237,228,.92)", backdropFilter: "blur(8px)",
+      borderTop: `1px solid ${C.line}`,
+      display: "flex", alignItems: "center", gap: 10,
+    }}>
+      <div style={{ maxWidth: 440, margin: "0 auto", width: "100%", display: "flex", alignItems: "center", gap: 10 }}>
+        {backTo && (
+          <button
+            onClick={() => { tap(); onBack(backTo); }} aria-label={backLabel}
+            style={{
+              flex: "0 0 auto", display: "flex", alignItems: "center", gap: 5,
+              background: C.paperCard, color: C.ink, border: `1.5px solid ${C.line}`,
+              borderRadius: 12, padding: "13px 15px 13px 12px", cursor: "pointer",
+              fontFamily: SANS, fontSize: 15, fontWeight: 700, whiteSpace: "nowrap",
+            }}
+          ><span style={{ fontSize: 17, lineHeight: 1 }}>←</span>{backLabel}</button>
+        )}
+        {ctaLabel && (
+          <button
+            onClick={() => { if (ctaDisabled) return; tap(); onCta(); }} disabled={ctaDisabled}
+            style={{
+              flex: 1, minWidth: 0, padding: "14px 10px", borderRadius: 12,
+              background: styles.bg, color: "#fff", border: "none",
+              cursor: ctaDisabled ? "not-allowed" : "pointer", opacity: ctaDisabled ? 0.45 : 1,
+              fontFamily: SANS, fontSize: 16, fontWeight: 700,
+              boxShadow: ctaDisabled ? "none" : `0 3px 0 ${styles.sh}`,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}
+          >{ctaLabel}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Breadcrumb({ screen, onNav, fromShare }) {
   // 共有結果を見ている人には、共有者の「条件」「候補」を見せない（ホーム › 結果 のみ）
   const items = (fromShare && (screen === "final" || screen === "reveal"))
