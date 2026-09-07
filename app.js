@@ -3067,12 +3067,18 @@ const modalCard = {
   maxHeight: "88vh", overflowY: "auto", boxShadow: "0 -10px 40px rgba(0,0,0,.25)",
 };
 
+// デプロイごとに変わる番号。ブラウザが古いファイルを使い回さないよう、
+// 取得URLに付ける。index.html に GitHub Actions が埋め込む。
+// ホーム画面に追加したアプリは独自のキャッシュを持っていて、
+// 付けないと更新しても古いまま動き続けることがある。
+const BUILD_Q = (typeof window !== "undefined" && window.__BUILD__) ? ("?v=" + window.__BUILD__) : "";
+
 /* エントリポイント：外部 JSON を読み込んでから描画 */
 async function boot() {
   try {
     const [stationsData, adjData] = await Promise.all([
-      fetch("data/stations.json").then((r) => r.json()),
-      fetch("data/adjacency.json").then((r) => r.json()),
+      fetch("data/stations.json" + BUILD_Q).then((r) => r.json()),
+      fetch("data/adjacency.json" + BUILD_Q).then((r) => r.json()),
     ]);
     ADJ = adjData;
     DEFAULT_STATIONS = stationsData.map((s) => ({

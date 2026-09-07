@@ -39,6 +39,23 @@ jobs:
           cp manifest.webmanifest _site/
           cp -r data _site/
           cp -r icons _site/
+
+      # ブラウザが古いファイルを使い回さないよう、コミットのSHAを付ける。
+      # 特にホーム画面に追加したアプリは独自のキャッシュを持っていて、
+      # これが無いと更新しても古いまま動き続けることがある。
+      - name: Add cache-busting build id
+        run: |
+          BUILD="${GITHUB_SHA::12}"
+          sed -i \
+            -e "s|\./app\.js|./app.js?v=$BUILD|g" \
+            -e "s|\./style\.css|./style.css?v=$BUILD|g" \
+            -e "s|\./sfx\.js|./sfx.js?v=$BUILD|g" \
+            -e "s|\./config\.js|./config.js?v=$BUILD|g" \
+            -e "s|\./supabase-client\.js|./supabase-client.js?v=$BUILD|g" \
+            -e "s|<title>|<script>window.__BUILD__=\"$BUILD\";</script><title>|" \
+            _site/index.html
+          echo "build id: $BUILD"
+          grep -o 'v=[0-9a-f]\{12\}' _site/index.html | sort -u
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
