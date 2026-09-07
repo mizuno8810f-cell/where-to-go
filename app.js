@@ -1078,6 +1078,35 @@ const inputBase = {
   border: `1.5px solid ${C.line}`, background: "#fff", fontFamily: SANS, fontSize: 16, color: C.ink,
 };
 
+/* パスワード入力。再発行できない以上、打ち間違いに気づけないと詰むので
+   目のボタンで表示を切り替えられるようにする。text に切り替えたときに
+   iOS が勝手に大文字化・自動修正しないよう属性で止める。 */
+function PasswordInput({ value, onChange, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type={show ? "text" : "password"}
+        value={value} onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        autoCapitalize="none" autoCorrect="off" spellCheck={false}
+        placeholder="8文字以上"
+        style={{ ...inputBase, marginTop: 4, paddingRight: 52 }}
+      />
+      <button
+        type="button"
+        aria-label={show ? "パスワードを隠す" : "パスワードを表示"}
+        onClick={() => setShow((v) => !v)}
+        style={{
+          position: "absolute", top: 4, right: 0, height: "calc(100% - 4px)", width: 48,
+          background: "none", border: "none", cursor: "pointer", fontSize: 18,
+          display: "flex", alignItems: "center", justifyContent: "center", color: C.muted,
+        }}
+      >{show ? "🙈" : "👁"}</button>
+    </div>
+  );
+}
+
 function AuthModal({ onClose, onDone, onSkip }) {
   const [mode, setMode] = useState("signup");   // signup | signin
   const [id, setId] = useState("");
@@ -1137,11 +1166,12 @@ function AuthModal({ onClose, onDone, onSkip }) {
           placeholder="半角英数と _ で4〜20文字" style={{ ...inputBase, marginTop: 4 }}
         />
         <div style={{ height: 12 }} />
-        <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1.5, color: C.signal, fontWeight: 700 }}>パスワード</label>
-        <input
-          type="password" value={pw} onChange={(e) => setPw(e.target.value)}
+        <label style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1.5, color: C.signal, fontWeight: 700 }}>
+          パスワード <span style={{ fontFamily: SANS, letterSpacing: 0, color: C.muted, fontWeight: 600 }}>（👁 で表示して確認できます）</span>
+        </label>
+        <PasswordInput
+          value={pw} onChange={setPw}
           autoComplete={mode === "signup" ? "new-password" : "current-password"}
-          placeholder="8文字以上" style={{ ...inputBase, marginTop: 4 }}
         />
 
         {mode === "signup" && (
