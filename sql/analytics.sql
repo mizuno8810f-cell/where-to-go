@@ -16,7 +16,13 @@ create table if not exists public.app_events (
   created_at timestamptz not null default now()
 );
 
+-- 端末ID（visitor_id）。匿名アカウントは、トークン更新に失敗すると破棄されて
+-- 作り直されるため、user_id で人数を数えると水増しになる。localStorage に
+-- 持ち続ける乱数IDで数える。既存テーブルにも後から追加できる。
+alter table public.app_events add column if not exists visitor_id text;
+
 create index if not exists app_events_time_idx  on public.app_events (created_at);
+create index if not exists app_events_visitor_idx on public.app_events (visitor_id);
 create index if not exists app_events_event_idx on public.app_events (event, created_at);
 create index if not exists app_events_user_idx  on public.app_events (user_id);
 
@@ -97,7 +103,8 @@ set search_path = public
 as $$
   select
     (select count(*)                from public.app_events    where event = 'page_view'),
-    (select count(distinct user_id) from public.app_events    where event = 'page_view'),
+    (select count(distinct coalesce(visitor_id, user_id::text))
+       from public.app_events where event = 'page_view'),
     (select count(*)                from public.app_events    where event = 'page_view'
         and created_at >= now() - interval '7 days'),
     (select count(*)                from auth.users),
@@ -122,7 +129,7 @@ as $$
   select
     (created_at at time zone 'Asia/Tokyo')::date as day,
     count(*)::bigint                              as pv,
-    count(distinct user_id)::bigint              as uniques
+    count(distinct coalesce(visitor_id, user_id::text))::bigint as uniques
   from public.app_events
   where event = 'page_view'
     and created_at >= now() - make_interval(days => n_days)

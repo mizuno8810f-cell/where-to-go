@@ -71,24 +71,60 @@ let ADJ = {};
 let DEFAULT_STATIONS = [];
 
 /* ============================================================
-   永続化（Artifact Persistent Storage → 無ければセッション保持）
+   永続化（localStorage。window.storage があればそちらを優先）
+
+   window.storage は元の Artifact 環境の API で、GitHub Pages には存在しない。
+   以前はそれしか見ていなかったため、ココイッタの記録がこの端末に一切
+   保存されず、クラウド（Supabase）だけが頼りになっていた。匿名セッションが
+   切れると記録が消えたように見えるのはこれが原因。localStorage に保存して、
+   認証が切れても端末側に残るようにする。
    ============================================================ */
 const STORE_KEY = "wheretogo:stations:v2";
+const LS = {
+  get(k) {
+    try { if (typeof localStorage !== "undefined") return localStorage.getItem(k); } catch (e) { /* 無効化されている */ }
+    return null;
+  },
+  set(k, v) {
+    try { if (typeof localStorage !== "undefined") localStorage.setItem(k, v); return true; } catch (e) { /* 容量超過/無効 */ }
+    return false;
+  },
+};
 async function loadStations() {
   try {
     if (typeof window !== "undefined" && window.storage) {
       const r = await window.storage.get(STORE_KEY);
       if (r && r.value) return JSON.parse(r.value);
     }
-  } catch (e) { /* 初回/未対応時は既定データ */ }
+  } catch (e) { /* 未対応なら localStorage を見る */ }
+  try {
+    const raw = LS.get(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* 壊れていたら既定データ */ }
   return null;
 }
 async function saveStations(list) {
+  // 保存するのは記録した駅だけ。1518駅ぶん全部書くと容量を無駄に食う。
+  const slim = (list || [])
+    .filter((s) => s.visitCount > 0 || s.visited)
+    .map((s) => ({ id: s.id, visited: !!s.visited, visitCount: s.visitCount || 0, lastVisit: s.lastVisit || null }));
   try {
     if (typeof window !== "undefined" && window.storage) {
-      await window.storage.set(STORE_KEY, JSON.stringify(list));
+      await window.storage.set(STORE_KEY, JSON.stringify(slim));
     }
-  } catch (e) { /* 保存不可でもセッション内は動作 */ }
+  } catch (e) { /* noop */ }
+  LS.set(STORE_KEY, JSON.stringify(slim));
+}
+// 保存済みの記録（駅IDと回数だけ）を、読み込んだ駅データに重ねる
+function mergeSaved(stations, saved) {
+  if (!Array.isArray(saved) || !saved.length) return stations;
+  const m = {};
+  saved.forEach((s) => { if (s && s.id) m[s.id] = s; });
+  return stations.map((s) => {
+    const e = m[s.id];
+    if (!e) return s;
+    return { ...s, visited: !!e.visited, visitCount: e.visitCount || 0, lastVisit: e.lastVisit || null };
+  });
 }
 
 /* ============================================================
@@ -1059,7 +1095,7 @@ function StatsScreen() {
   const num = (v) => (v == null ? "—" : Number(v).toLocaleString("ja-JP"));
   const cards = data ? [
     { key: "pv", k: "総アクセス数 (PV)", v: data.page_views, hint: "アプリを開いた延べ回数", avail: pvDaily != null, series: () => fillDays(pvDaily, "pv", 30) },
-    { key: "uniq", k: "ユニーク人数", v: data.unique_users, hint: "PVを出した端末数（目安）", avail: pvDaily != null, series: () => fillDays(pvDaily, "uniques", 30) },
+    { key: "uniq", k: "ユニーク人数", v: data.unique_users, hint: "端末数の目安。別のブラウザやプライベートモードは別で数えます", avail: pvDaily != null, series: () => fillDays(pvDaily, "uniques", 30) },
     { key: "pv7", k: "直近7日のPV", v: data.pv_last_7d, hint: "ここ7日間のアクセス", avail: pvDaily != null, series: () => fillDays(pvDaily, "pv", 30) },
     { key: "ck", k: "ココイク総数", v: data.total_checkins, hint: "「行った」記録の合計", avail: ceDaily != null, series: () => fillDays(ceDaily, "checkins", 30) },
     { key: "cku", k: "ココイクした人数", v: data.users_who_checked_in, hint: "記録した端末数", avail: ceDaily != null, series: () => fillDays(ceDaily, "users", 30) },
@@ -1180,20 +1216,31 @@ function App() {
   // 初期ロード（駅データ）。出発駅の復元は「条件を選んで決める」時のみ行う（ホームは条件ゼロ）。
   useEffect(() => {
     (async () => {
+      // ① この端末に保存された記録を先に重ねる（クラウドが使えなくてもここは残る）
       const saved = await loadStations();
-      if (saved && Array.isArray(saved) && saved.length) setStations(saved);
+      if (saved && Array.isArray(saved) && saved.length) {
+        // 旧形式（駅データを丸ごと保存）も読めるようにしておく
+        setStations((cur) => (saved[0] && saved[0].scores ? saved : mergeSaved(cur, saved)));
+      }
       try { /* 出発駅はここでは復元しない（条件ゼロを保つ） */ } catch (e) { /* noop */ }
       setReady(true);
 
-      // クラウド（Supabase）から訪問回数を復元。設定時のみ／失敗しても表示は維持。
+      // ② クラウド（Supabase）の記録を上に重ねる。設定時のみ／失敗しても表示は維持。
+      //    多い方を採用する。匿名セッションが作り直されるとクラウド側が空になるが、
+      //    その場合でも端末の記録が消えないようにするため。
       try {
         const SH = typeof window !== "undefined" ? window.SupaHistory : null;
         if (SH && (await SH.ready())) {
           const summary = await SH.getCountsSummary();
-          setStations((cur) => cur.map((s) => {
-            const e = summary[s.id];
-            return e ? { ...s, visited: true, visitCount: e.count, lastVisit: e.lastVisit } : s;
-          }));
+          setStations((cur) => {
+            const next = cur.map((s) => {
+              const e = summary[s.id];
+              if (!e || e.count <= (s.visitCount || 0)) return s;
+              return { ...s, visited: true, visitCount: e.count, lastVisit: e.lastVisit || s.lastVisit };
+            });
+            saveStations(next);   // クラウドから戻した記録も端末に残す
+            return next;
+          });
         }
       } catch (e) { /* クラウド未設定/失敗時はローカル表示のまま */ }
     })();
@@ -1257,7 +1304,7 @@ function App() {
   const saveBases = (arr) => {
     const clean = arr.filter(Boolean);
     setCookie(BASE_COOKIE, clean.join(","), 365); // 出発駅を Cookie に保存（1年）
-    try { if (typeof window !== "undefined" && window.storage) window.storage.set("wheretogo:base:v1", clean.join(",")); } catch (e) { /* noop */ }
+    LS.set("wheretogo:base:v1", clean.join(","));   // Cookie が消えても残るように二重で持つ
   };
   const setBasesAndSave = (arr) => { const a = arr.length ? arr : [BASE_DEFAULT]; setBases(a); saveBases(a); };
   const setBaseAt = (i, id) => { const a = [...bases]; a[i] = id; setBasesAndSave(a); };
@@ -1436,7 +1483,7 @@ function App() {
 
   // Cookie から出発駅を復元して配列で返す（無ければ既定）
   const basesFromCookie = () => {
-    const c = getCookie(BASE_COOKIE);
+    const c = getCookie(BASE_COOKIE) || LS.get("wheretogo:base:v1");
     const arr = c ? c.split(",").map((x) => x.trim()).filter(Boolean) : [];
     return arr.length ? arr : [BASE_DEFAULT];
   };

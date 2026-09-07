@@ -25,6 +25,24 @@
 
   var state = { enabled: false, client: null, userId: null, ready: null, lastError: "" };
 
+  // 端末を表すID。認証とは無関係に localStorage で持ち続ける。
+  // 匿名セッションはトークンの更新に失敗すると破棄され、そのたびに別アカウントが
+  // 作られてしまう。アクセス数の「人数」をそれで数えると水増しになるので、
+  // 集計にはこのIDを使う。個人を特定する情報は一切含まない乱数。
+  var VISITOR_KEY = "wheretogo:visitor:v1";
+  function visitorId() {
+    try {
+      var v = window.localStorage.getItem(VISITOR_KEY);
+      if (!v) {
+        v = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : "v-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+        window.localStorage.setItem(VISITOR_KEY, v);
+      }
+      return v;
+    } catch (e) { return null; }   // プライベートモード等では null（user_id で数える）
+  }
+
   function makeApi() {
     return {
       get configured() { return configured; },
@@ -62,7 +80,7 @@
         if (!state.enabled) return false;
         var res = await state.client
           .from("app_events")
-          .insert({ user_id: state.userId, event: "page_view" });
+          .insert({ user_id: state.userId, event: "page_view", visitor_id: visitorId() });
         if (res.error) throw res.error;
         return true;
       },
