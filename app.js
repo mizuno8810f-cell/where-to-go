@@ -819,7 +819,7 @@ function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude,
 /* 10件を「引く」演出。
    最後の1件はルーレットで選ばれる実感があるのに、その手前の10件は
    ただ一覧が出るだけで「たくさんの中から引いた」感が無かった。
-   候補プールの駅名を高速で回してから、1枚ずつ配る。タップで飛ばせる。 */
+   候補プールの駅名を高速で回してから、1枚ずつ配る。 */
 function DrawTen({ poolNames, total, count, onTick, onDone }) {
   const [name, setName] = useState(poolNames[0] || "");
   const [n, setN] = useState(0);          // 配り終えた枚数
@@ -857,7 +857,7 @@ function DrawTen({ poolNames, total, count, onTick, onDone }) {
   }, []);
 
   return (
-    <div onClick={finish} style={{ cursor: "pointer", padding: "10px 0 4px" }}>
+    <div style={{ padding: "10px 0 4px" }}>
       <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: 2, color: C.signal, fontWeight: 700, textAlign: "center" }}>
         DRAWING
       </div>
@@ -884,9 +884,6 @@ function DrawTen({ poolNames, total, count, onTick, onDone }) {
           }} />
         ))}
       </div>
-      <p style={{ fontFamily: SANS, fontSize: 12, color: C.muted, textAlign: "center", marginTop: 14 }}>
-        タップで飛ばせます
-      </p>
     </div>
   );
 }
