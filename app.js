@@ -1980,7 +1980,7 @@ function App() {
             <div style={{ height: 10 }} />
             <MenuItem
               icon="⚙️" title="設定"
-              desc="効果音のオン・オフを切り替えます。"
+              desc="効果音と演出（抽選アニメーション）のオン・オフを切り替えます。"
               onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
             />
             <div style={{ height: 10 }} />
