@@ -283,6 +283,10 @@ function setCookie(name, value, days) {
   document.cookie = name + "=" + encodeURIComponent(value) + "; expires=" + exp + "; path=/; SameSite=Lax";
 }
 const BASE_COOKIE = "dokoiku_base";
+// 演出（抽選アニメーション）のON/OFF。効果音と同じくCookieに持つ。既定はON。
+const MOTION_COOKIE = "dokoiku_motion";
+const motionEnabled = () => getCookie(MOTION_COOKIE) !== "0";
+const setMotionEnabled = (v) => setCookie(MOTION_COOKIE, v ? "1" : "0", 365);
 
 // 出発駅からの所要時間（隣接グラフのダイクストラ・概算／乗換ペナルティなし）
 // dist = 乗車時間の合計（分）, hops = 経由する駅数。hops は「表示時間と実際のズレ」の目安に使う。
@@ -1450,6 +1454,7 @@ function App() {
   const [accountId, setAccountId] = useState("");
   const [authOpen, setAuthOpen] = useState(false);      // ログイン/登録モーダル
   const [drawing, setDrawing] = useState(false);        // 10件を引く演出中
+  const [motionOn, setMotionOn] = useState(motionEnabled()); // 演出のON/OFF（設定）
   const pendingAction = useRef(null);                   // 認証後に実行したい操作
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
@@ -1812,7 +1817,7 @@ function App() {
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
   const search10 = () => {
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
-    setExcluded([]); setChosen(null); setDrawing(true); setScreen("pick10");
+    setExcluded([]); setChosen(null); setDrawing(motionOn); setScreen("pick10");
   };
 
   // 今日の気分（任意条件フェーズ）画面へ
@@ -1821,7 +1826,7 @@ function App() {
   const reroll = () => {
     if (rerollUsed) return;
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
-    setExcluded([]); setChosen(null); setRerollUsed(true); setDrawing(true); setScreen("pick10");
+    setExcluded([]); setChosen(null); setRerollUsed(true); setDrawing(motionOn); setScreen("pick10");
   };
 
   // 10件（「ここは嫌だ」除外後）から1件。気分未選択なら完全ランダム、選択なら気分スコアの積で重み付け。
@@ -1834,6 +1839,7 @@ function App() {
     setChosenHistory((h) => [target, ...h.filter((x) => x.id !== target.id)].slice(0, 30));
     setRevealNames(pool.map((p) => p.name));
     setRevealTarget(target.name);
+    if (!motionOn) { if (typeof window !== "undefined" && window.Sfx) window.Sfx.win(); setScreen("final"); return; }
     setScreen("reveal");
   };
   // STEP3「この気分で1つ決める」：いま出ている10件（除外を除く）から決める
@@ -1929,7 +1935,7 @@ function App() {
   })();
 
   return (
-    <Shell hasBar={!!bar}>
+    <Shell hasBar={!!bar} noMotion={!motionOn}>
 
       {/* ヘッダ：ロゴ / パンくず / ホームアイコン / ハンバーガー
           ホームは画面内に大きなロゴとパンくず相当の情報があるので、
@@ -2016,6 +2022,24 @@ function App() {
                 <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>抽選やタップ時の音を鳴らします。</div>
               </div>
               <SoundToggle />
+            </div>
+            <div style={{ height: 10 }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ paddingRight: 10 }}>
+                <div style={{ fontFamily: SANS, fontSize: 16, fontWeight: 700, color: C.ink }}>演出</div>
+                <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.55 }}>
+                  候補を引くアニメーションとルーレットを見せます。オフにすると結果がすぐ出ます。
+                </div>
+              </div>
+              <button
+                aria-label={motionOn ? "演出オン" : "演出オフ"}
+                onClick={() => {
+                  const v = !motionOn;
+                  setMotionEnabled(v); setMotionOn(v);
+                  if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); }
+                }}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "4px 4px", flex: "0 0 auto" }}
+              >{motionOn ? "🎬" : "⏭"}</button>
             </div>
           </div>
         </div>
@@ -2651,9 +2675,9 @@ function VisitRow({ st, onAdd, onRemove, recorded, rank, editable, onEdit }) {
 /* ============================================================
    レイアウト部品
    ============================================================ */
-function Shell({ children, hasBar }) {
+function Shell({ children, hasBar, noMotion }) {
   return (
-    <div style={{
+    <div className={noMotion ? "nomotion" : undefined} style={{
       minHeight: "100vh", background: C.paper,
       padding: hasBar ? "22px 16px calc(96px + env(safe-area-inset-bottom, 0px))" : "22px 16px 48px",
     }}>

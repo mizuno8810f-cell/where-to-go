@@ -29,6 +29,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #13A899; outline-
 /* 抽選ルーレット：1つ1つの駅名がスロットのように上から落ちてくる */
 .reel { animation: reel .13s linear; }
 @keyframes reel { from { opacity: .15; transform: translateY(-90%); } to { opacity: 1; transform: translateY(0); } }
+/* アプリ内の設定で「演出」をオフにしたとき（設定 → 演出） */
+.nomotion .fade, .nomotion .deal, .nomotion .reveal, .nomotion .dot,
+.nomotion .countpop, .nomotion .floatpop, .nomotion .reel { animation: none !important; }
+
 @media (prefers-reduced-motion: reduce) {
   /* 視差軽減時は落下モーションは止めるが、文字の切り替え（回転感）は残す */
   .fade, .deal, .reveal, .dot, .countpop, .floatpop, .reel { animation: none !important; }
