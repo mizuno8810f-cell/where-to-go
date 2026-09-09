@@ -284,6 +284,28 @@ function setCookie(name, value, days) {
   document.cookie = name + "=" + encodeURIComponent(value) + "; expires=" + exp + "; path=/; SameSite=Lax";
 }
 const BASE_COOKIE = "dokoiku_base";
+// 地図アプリの選択。既定は Googleマップ。
+const MAP_COOKIE = "dokoiku_map";
+const MAP_APPS = [
+  { k: "google", label: "Googleマップ", url: (q) => `https://www.google.com/maps/search/?api=1&query=${q}` },
+  { k: "apple", label: "Appleマップ", url: (q) => `https://maps.apple.com/?q=${q}` },
+];
+const mapApp = () => MAP_APPS.find((m) => m.k === getCookie(MAP_COOKIE)) || MAP_APPS[0];
+const setMapApp = (k) => setCookie(MAP_COOKIE, k, 365);
+// 座標を持っていないので駅名で検索させる。データ側の重複よけの括弧は外し、
+// 県名を足して取り違えを防ぐ（同名は「入谷」だけだが保険）。
+const PREF = { 東京: "東京都", 神奈川: "神奈川県", 埼玉: "埼玉県", 千葉: "千葉県" };
+function mapQuery(st) {
+  let n = String(st.name || "")
+    .replace(/[（(]\s*(東京|神奈川|埼玉|千葉)\s*[）)]\s*$/, "")  // 「大宮(埼玉)」など
+    .replace(/[（(〈].*$/, "")                                      // 「押上（スカイツリー前）」など
+    .trim();
+  if (!n) n = st.name;
+  const suffix = /ステーション$/.test(n) ? "" : "駅";   // 「〜・ステーション」に駅は付けない
+  return `${n}${suffix} ${PREF[st.area] || st.area}`;
+}
+const mapUrl = (st, app) => (app || mapApp()).url(encodeURIComponent(mapQuery(st)));
+
 // 演出（抽選アニメーション）のON/OFF。効果音と同じくCookieに持つ。既定はON。
 const MOTION_COOKIE = "dokoiku_motion";
 const motionEnabled = () => getCookie(MOTION_COOKIE) !== "0";
@@ -1476,6 +1498,7 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false);      // ログイン/登録モーダル
   const [drawing, setDrawing] = useState(false);        // 10件を引く演出中
   const [motionOn, setMotionOn] = useState(motionEnabled()); // 演出のON/OFF（設定）
+  const [mapKey, setMapKey] = useState(mapApp().k);          // 地図アプリ（設定）
   const pendingAction = useRef(null);                   // 認証後に実行したい操作
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
@@ -1992,7 +2015,7 @@ function App() {
             <div style={{ height: 10 }} />
             <MenuItem
               icon="⚙️" title="設定"
-              desc="効果音と演出（抽選アニメーション）のオン・オフを切り替えます。"
+              desc="効果音・演出のオン・オフと、地図アプリを選べます。"
               onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
             />
             <div style={{ height: 10 }} />
@@ -2034,6 +2057,31 @@ function App() {
                 <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>抽選やタップ時の音を鳴らします。</div>
               </div>
               <SoundToggle />
+            </div>
+            <div style={{ height: 10 }} />
+            <div style={{ background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ fontFamily: SANS, fontSize: 16, fontWeight: 700, color: C.ink }}>地図アプリ</div>
+              <div style={{ fontFamily: SANS, fontSize: 12.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.55 }}>
+                結果画面の「地図でこの駅を見る」で開くアプリを選べます。
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                {MAP_APPS.map((m) => (
+                  <button
+                    key={m.k}
+                    onClick={() => { setMapApp(m.k); setMapKey(m.k); if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } }}
+                    style={{
+                      flex: 1, padding: "10px 8px", borderRadius: 10, cursor: "pointer",
+                      border: `1.5px solid ${mapKey === m.k ? C.signal : C.line}`,
+                      background: mapKey === m.k ? C.signal : "#fff",
+                      color: mapKey === m.k ? "#fff" : C.inkSoft,
+                      fontFamily: SANS, fontSize: 14, fontWeight: 700,
+                    }}
+                  >{m.label}</button>
+                ))}
+              </div>
+              <div style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.55 }}>
+                AppleマップはiPhone・Mac以外では地図のページが開きます。
+              </div>
             </div>
             <div style={{ height: 10 }} />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.paperCard, border: `1px solid ${C.line}`, borderRadius: 14, padding: "14px 16px" }}>
@@ -2449,6 +2497,21 @@ function App() {
               🍽 この駅でグルメを探す（ホットペッパー）
             </a>
           )}
+          <a
+            href={mapUrl(chosen, MAP_APPS.find((m) => m.k === mapKey))}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } }}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              width: "100%", boxSizing: "border-box", padding: "14px 16px", borderRadius: 14,
+              marginTop: 10, background: "#fff", border: `1.5px solid ${C.signal}`, color: C.signalDim,
+              fontFamily: SANS, fontSize: 15.5, fontWeight: 800, textDecoration: "none",
+              boxShadow: `0 3px 0 ${C.signal}55`,
+            }}
+          >
+            🗺 地図でこの駅を見る
+          </a>
           <div style={{ height: 22 }} />
           <VisitControl
             station={chosen}
