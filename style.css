@@ -29,6 +29,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #13A899; outline-
 /* 抽選ルーレット：1つ1つの駅名がスロットのように上から落ちてくる */
 .reel { animation: reel .13s linear; }
 @keyframes reel { from { opacity: .15; transform: translateY(-90%); } to { opacity: 1; transform: translateY(0); } }
+/* 幅の狭い端末では、下部バーのボタン3つが入りきらないので詰める */
+@media (max-width: 372px) {
+  .actionbar { gap: 7px !important; }
+  .actionbar button { font-size: 12.5px !important; padding-left: 9px !important; padding-right: 9px !important; }
+}
+
 /* アプリ内の設定で「演出」をオフにしたとき（設定 → 演出） */
 .nomotion .fade, .nomotion .deal, .nomotion .reveal, .nomotion .dot,
 .nomotion .countpop, .nomotion .floatpop, .nomotion .reel { animation: none !important; }

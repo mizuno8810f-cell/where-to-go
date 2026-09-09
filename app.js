@@ -258,6 +258,7 @@ function sampleBy(pool, n, wfn) {
   return out;
 }
 // 任意条件フェーズ(10→1)の重み：選択した気分スコア(1..5)の掛け算。未選択なら等倍(=完全ランダム)。
+// ※ いまは未使用。「今日の気分」画面を外したため（戻せるよう残してある）。
 function softWeight(st, softWishes) {
   if (!softWishes || !softWishes.length) return 1;
   let w = 1;
@@ -703,6 +704,7 @@ function WishPicker({ wishes, onToggle, onTop }) {
   );
 }
 /* 任意条件フェーズ用：タップのみの重み付けピッカー（絞り込みなし） */
+// ※ いまは未使用。「今日の気分」画面を外したため（戻せるよう残してある）。
 function SoftWishPicker({ selected, onToggle }) {
   return (
     <>
@@ -1463,7 +1465,7 @@ function StatsScreen() {
 function App() {
   const [stations, setStations] = useState(DEFAULT_STATIONS);
   const [ready, setReady] = useState(false);
-  const [screen, setScreen] = useState("home"); // home step1 pick10 step3 reveal final manage stats
+  const [screen, setScreen] = useState("home"); // home step1 pick10 reveal final manage stats
   const [hf, setHf] = useState({ ...DEFAULT_HF, timeRanges: {} });
   const [fromShare, setFromShare] = useState(false); // 共有リンクで開いた結果を閲覧中か（他人の条件を見せない対策）
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1478,17 +1480,14 @@ function App() {
   const [moodOpen, setMoodOpen] = useState(false); // STEP1「その他の絶対条件」の折りたたみ
   const [bases, setBases] = useState([BASE_DEFAULT]); // 出発駅（複数可）
   const [hardWishes, setHardWishes] = useState({}); // 絶対条件フェーズ(STEP1)：絞り込み { key:"on"(4以上)|"top"(5のみ) }
-  const [softWishes, setSoftWishes] = useState([]); // 任意条件フェーズ(STEP3)：重み付けのみ [key,...]
   // 結果表示（相性タグ）用に両方を合成
   const shownWishes = useMemo(() => {
     const m = { ...hardWishes };
-    softWishes.forEach((k) => { if (!m[k]) m[k] = "on"; });
     return m;
-  }, [hardWishes, softWishes]);
+  }, [hardWishes]);
   const [shown, setShown] = useState([]);
   const [excluded, setExcluded] = useState([]);
   const [chosen, setChosen] = useState(null);
-  const [rerollUsed, setRerollUsed] = useState(false);
   const [revealNames, setRevealNames] = useState([]);
   const [revealTarget, setRevealTarget] = useState("");
   const [lastRecordedId, setLastRecordedId] = useState(null); // 結果画面「ココイク」で+1済みの駅（重複+1防止）
@@ -1830,7 +1829,6 @@ function App() {
     return next;
   });
   // 【任意条件フェーズ/STEP3】タップのみ：重み付け用に選択/解除。
-  const toggleSoftWish = (k) => setSoftWishes((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
   const toggleExclude = (st) => setExcluded((cur) => (cur.includes(st.id) ? cur.filter((x) => x !== st.id) : [...cur, st.id]));
 
   // ① 絶対条件で候補を出す → 10件を表示（「行ってない場所を優先」時は 0.7^行った回数 で重み付け）
@@ -1840,18 +1838,16 @@ function App() {
   };
 
   // 今日の気分（任意条件フェーズ）画面へ
-  const goWishes = () => { setDrawing(false); setScreen("step3"); };
-
+  // 10件を引き直す。回数の制限はしない（同じ条件で気が済むまで引ける）。
   const reroll = () => {
-    if (rerollUsed) return;
     setShown(sampleBy(candidates, 10, (s) => historyWeight(s, hf)));
-    setExcluded([]); setChosen(null); setRerollUsed(true); setDrawing(motionOn); setScreen("pick10");
+    setExcluded([]); setChosen(null); setDrawing(motionOn); setScreen("pick10");
   };
 
-  // 10件（「ここは嫌だ」除外後）から1件。気分未選択なら完全ランダム、選択なら気分スコアの積で重み付け。
+  // 10件（「ここは嫌だ」除外後）から1件。完全ランダム。
   const runReveal = (pool) => {
     if (!pool.length) return;
-    const target = pickBy(pool, (s) => softWeight(s, softWishes));
+    const target = pickBy(pool, () => 1);
     setMissionList(null); setMissionN(1); // 新しい結果ではミッションをリセット
     setChosen(target);
     setLastChosen(target);
@@ -1861,8 +1857,8 @@ function App() {
     if (!motionOn) { if (typeof window !== "undefined" && window.Sfx) window.Sfx.win(); setScreen("final"); return; }
     setScreen("reveal");
   };
-  // STEP3「この気分で1つ決める」：いま出ている10件（除外を除く）から決める
-  const decideWithWishes = () => runReveal(shown.filter((s) => !excluded.includes(s.id)));
+  // いま出ている10件（除外を除く）から1つ決める
+  const decideOne = () => { setDrawing(false); runReveal(shown.filter((s) => !excluded.includes(s.id))); };
 
   // 「行った」記録：訪問回数+1・最終訪問日を今日に
   // 記録する操作の前に一度だけ登録をすすめる。「あとで」を選んだ人には
@@ -1941,13 +1937,10 @@ function App() {
     }
     if (screen === "pick10" && drawing && shown.length > 0) return null;
     if (screen === "pick10" && shown.length > 0) {
-      return { backTo, backLabel, ctaLabel: "ここから一つ決める →", ctaDisabled: remainingShown === 0, onCta: goWishes, ctaKind: "dark" };
-    }
-    if (screen === "step3") {
       return {
         backTo, backLabel,
-        ctaLabel: softWishes.length ? "🎲 この気分で1つ決める！" : "🎲 ランダムで1つ決める！",
-        ctaDisabled: remainingShown === 0, onCta: decideWithWishes,
+        subLabel: "🔄 引き直す", onSub: reroll,
+        ctaLabel: "🎲 決める", ctaDisabled: remainingShown === 0, onCta: decideOne, ctaKind: "dark",
       };
     }
     return { backTo, backLabel };
@@ -2356,7 +2349,7 @@ function App() {
         }
         return (
         <Fade key="pick10">
-          <StepHead n="02" title="今日の候補" sub="気が乗らない所は「ここは嫌だ」で外せます。「ここから一つ決める」を押すと、ルーレットで1つに決まります。" />
+          <StepHead n="02" title="今日の候補" sub="気が乗らない所は「ここは嫌だ」で外せます。ピンとこなければ「引き直す」で別の10件に。「1つに決める」でルーレットが回ります。" />
           {shown.length === 0 ? (
             <div style={{ border: `2px dashed ${C.line}`, borderRadius: 16, padding: 20, background: C.paperCard, textAlign: "center" }}>
               <p style={{ fontFamily: SANS, fontSize: 15, color: C.inkSoft, margin: "0 0 14px" }}>
@@ -2404,34 +2397,6 @@ function App() {
                 </p>
               )}
             </>
-          )}
-        </Fade>
-        );
-      })()}
-
-      {screen === "step3" && (() => {
-        const pool = shown.filter((s) => !excluded.includes(s.id));
-        const hasMood = softWishes.length > 0;
-        return (
-        <Fade key="step3">
-          <StepHead n="03" title="今日の気分はありますか？" sub="ここは絞り込みません。気分は選んでも選ばなくてもOK。" />
-          <div style={{
-            background: hasMood ? "rgba(14,140,129,.08)" : C.paperCard,
-            border: `1.5px solid ${hasMood ? C.signal : C.line}`, borderRadius: 14, padding: "13px 16px", marginBottom: 16,
-          }}>
-            <p style={{ fontFamily: SANS, fontSize: 13, color: C.ink, margin: 0, lineHeight: 1.7 }}>
-              🎲 <b>気分を選ばない</b> → 残り{pool.length}件から<b>完全ランダム</b>で決めます。<br />
-              💚 <b>気分を選ぶ</b> → 選んだ気分に<b>合う駅ほど当たりやすく</b>なります（重み付け）。<br />
-              <span style={{ color: C.muted, fontSize: 12 }}>
-                いまは{hasMood ? `気分を${softWishes.length}個選択中 → 重み付けで決定` : "未選択 → 完全ランダムで決定"}
-              </span>
-            </p>
-          </div>
-          <SoftWishPicker selected={softWishes} onToggle={toggleSoftWish} />
-          {pool.length === 0 && (
-            <p style={{ fontFamily: SANS, fontSize: 13, color: C.danger, textAlign: "center", marginTop: 12 }}>
-              候補がありません。前の画面で戻すか、条件をゆるめてください。
-            </p>
           )}
         </Fade>
         );
@@ -2499,6 +2464,14 @@ function App() {
           </p>
           <div style={{ height: 22 }} />
           <MissionBox n={missionN} onN={setMissionN} list={missionList} onGenerate={setMissionList} />
+          {!fromShare && (
+            <>
+              <div style={{ height: 16 }} />
+              <Btn kind="ghost" onClick={decideOne}>🎲 同じ10件からもう一度決める</Btn>
+              <div style={{ height: 10 }} />
+              <Btn kind="ghost" onClick={reroll}>🔄 10件を引き直す</Btn>
+            </>
+          )}
           <div style={{ height: 16 }} />
           {fromShare ? (
             <Btn kind="ghost" onClick={startOwnConditions}>🔧 自分でも条件を選んで決める →</Btn>
@@ -2793,7 +2766,6 @@ const CRUMBS = {
   home: [["ホーム", "home"]],
   step1: [["ホーム", "home"], ["条件", "step1"]],
   pick10: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"]],
-  step3: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["今日の気分", "step3"]],
   reveal: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["結果", "final"]],
   final: [["ホーム", "home"], ["条件", "step1"], ["候補", "pick10"], ["結果", "final"]],
   manage: [["ホーム", "home"], ["ココイッタ", "manage"]],
@@ -2803,8 +2775,7 @@ const CRUMBS = {
 const BACK_TO = {
   step1: "home",
   pick10: "step1",
-  step3: "pick10",
-  final: "step3",
+  final: "pick10",
   manage: "home",
   stats: "home",
 };
@@ -2814,7 +2785,7 @@ const BACK_TO = {
      スクロールしないと戻れず、迷子になる人が多かった。
    ・右が「次に進む」。こちらも下までスクロールしないと押せなかった。
    この2つを常に見える位置に置く。抽選中とホームでは出さない。 */
-function ActionBar({ backTo, backLabel, onBack, ctaLabel, ctaDisabled, onCta, ctaKind }) {
+function ActionBar({ backTo, backLabel, onBack, subLabel, onSub, ctaLabel, ctaDisabled, onCta, ctaKind }) {
   if (!backTo && !ctaLabel) return null;
   const tap = () => { if (typeof window !== "undefined" && window.Sfx) { window.Sfx.unlock(); window.Sfx.tap(); } };
   const styles = { primary: { bg: C.signal, sh: C.signalDim }, dark: { bg: C.ink, sh: "#0d1826" } }[ctaKind || "primary"];
@@ -2826,17 +2797,28 @@ function ActionBar({ backTo, backLabel, onBack, ctaLabel, ctaDisabled, onCta, ct
       borderTop: `1px solid ${C.line}`,
       display: "flex", alignItems: "center", gap: 10,
     }}>
-      <div style={{ maxWidth: 440, margin: "0 auto", width: "100%", display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="actionbar" style={{ maxWidth: 440, margin: "0 auto", width: "100%", display: "flex", alignItems: "center", gap: 10 }}>
         {backTo && (
           <button
             onClick={() => { tap(); onBack(backTo); }} aria-label={backLabel}
             style={{
               flex: "0 0 auto", display: "flex", alignItems: "center", gap: 5,
               background: C.paperCard, color: C.ink, border: `1.5px solid ${C.line}`,
-              borderRadius: 12, padding: "13px 15px 13px 12px", cursor: "pointer",
-              fontFamily: SANS, fontSize: 15, fontWeight: 700, whiteSpace: "nowrap",
+              borderRadius: 12, padding: subLabel ? "13px 12px 13px 10px" : "13px 15px 13px 12px", cursor: "pointer",
+              fontFamily: SANS, fontSize: subLabel ? 13.5 : 15, fontWeight: 700, whiteSpace: "nowrap",
             }}
           ><span style={{ fontSize: 17, lineHeight: 1 }}>←</span>{backLabel}</button>
+        )}
+        {subLabel && (
+          <button
+            onClick={() => { tap(); onSub(); }}
+            style={{
+              flex: "0 0 auto", background: C.paperCard, color: C.ink,
+              border: `1.5px solid ${C.line}`, borderRadius: 12,
+              padding: "13px 11px", cursor: "pointer",
+              fontFamily: SANS, fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap",
+            }}
+          >{subLabel}</button>
         )}
         {ctaLabel && (
           <button
