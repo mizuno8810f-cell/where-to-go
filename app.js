@@ -749,7 +749,7 @@ function Board({ count, note }) {
 }
 
 /* 候補カード */
-function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude, timeText, hops }) {
+function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude, timeText, hops, times }) {
   const hasActions = !!onToggleExclude;
   const faded = dim || excludedMark;
   return (
@@ -777,6 +777,25 @@ function StationCard({ st, index, dim, highlight, excludedMark, onToggleExclude,
       {st.dateFeature && (
         <div style={{ fontFamily: SANS, fontSize: 13.5, color: C.inkSoft, lineHeight: 1.5 }}>
           {st.dateFeature}
+        </div>
+      )}
+      {/* 出発駅が複数のときは、駅ごとの所要時間も出す。
+          上の表記は全員ぶんの最大なので、誰がどれだけ乗るかは分からないため。 */}
+      {times && times.length > 1 && (
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: "3px 14px", marginTop: 9,
+          padding: "7px 10px", borderRadius: 10,
+          background: "rgba(23,38,58,.04)", border: `1px solid ${C.line}`,
+        }}>
+          {times.map((r, i) => (
+            <span key={i} style={{ display: "inline-flex", alignItems: "baseline", gap: 5, whiteSpace: "nowrap" }}>
+              <span style={{ fontFamily: SANS, fontSize: 11.5, fontWeight: 700, color: C.inkSoft }}>{r.name}</span>
+              <span style={{
+                fontFamily: MONO, fontSize: 12, fontWeight: 700,
+                color: r.t == null ? C.danger : C.signalDim,
+              }}>{r.t == null ? "経路なし" : `約${r.t}分`}</span>
+            </span>
+          ))}
         </div>
       )}
       {/* この街が何に強いか。条件を選ばなかった人でも中身を判断できるように出す */}
@@ -2372,6 +2391,7 @@ function App() {
                       st={st} index={i}
                       timeText={hf.timeOn ? timeSummary(st) : null}
                       hops={maxHops(st)}
+                      times={bases.filter(Boolean).length > 1 ? stTimes(st) : null}
                       excludedMark={excluded.includes(st.id)}
                       onToggleExclude={() => toggleExclude(st)}
                     />
