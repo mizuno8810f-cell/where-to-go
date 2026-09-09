@@ -2468,8 +2468,6 @@ function App() {
             <>
               <div style={{ height: 16 }} />
               <Btn kind="ghost" onClick={decideOne}>🎲 同じ10件からもう一度決める</Btn>
-              <div style={{ height: 10 }} />
-              <Btn kind="ghost" onClick={reroll}>🔄 10件を引き直す</Btn>
             </>
           )}
           <div style={{ height: 16 }} />
